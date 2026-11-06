@@ -1,5 +1,9 @@
-"""Database helper protocol: one JSON request on stdin, JSON events on stdout.
-Credentials never appear in arguments, logs, reports, or exception responses.
+"""Database helper protocol: one JSON request, JSON events on stdout.
+
+macOS sends the request on stdin. The Windows frozen executable does not
+receive a redirected pipe, so it reads a temporary file path from argv and
+deletes that file immediately. Credentials never appear in logs, reports,
+or exception responses.
 """
 import gzip
 import hashlib
@@ -228,10 +232,21 @@ def clone(request, connector=sql_connection):
         mongo.close()
 
 
+def read_request():
+    """Windows frozen builds do not receive a redirected stdin pipe."""
+    if len(sys.argv)>1:
+        path=Path(sys.argv[1])
+        try:return path.read_text(encoding='utf-8-sig')
+        finally:
+            try:path.unlink()
+            except OSError:pass
+    return sys.stdin.readline()
+
+
 def main():
     request={}
     try:
-        request=json.loads(sys.stdin.readline())
+        request=json.loads(read_request())
         command=request['command']
         if command=='probeMongo':
             try:result=probe_mongo(request['mongoUri'])

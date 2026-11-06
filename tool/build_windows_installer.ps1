@@ -23,21 +23,25 @@ $helperDir = Join-Path $root 'build\database_helper\xemay_database_helper_window
 $helper = Join-Path $helperDir 'xemay_database_helper_windows.exe'
 if (-not (Test-Path $helper)) { throw "Khong thay $helper" }
 
+$requestPath = Join-Path $env:TEMP ("xemay-helper-{0}.json" -f [guid]::NewGuid().ToString('n'))
+[System.IO.File]::WriteAllText($requestPath, '{"command":"checkSqlDriver"}', [System.Text.UTF8Encoding]::new($false))
 $start = New-Object System.Diagnostics.ProcessStartInfo
 $start.FileName = $helper
+$start.Arguments = '"' + $requestPath + '"'
 $start.WorkingDirectory = $helperDir
-$start.RedirectStandardInput = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
 $start.UseShellExecute = $false
 $start.CreateNoWindow = $true
 $process = [System.Diagnostics.Process]::Start($start)
-$process.StandardInput.WriteLine('{"command":"checkSqlDriver"}')
-$process.StandardInput.Close()
-$probe = $process.StandardOutput.ReadToEnd()
+$outTask = $process.StandardOutput.ReadToEndAsync()
+$errTask = $process.StandardError.ReadToEndAsync()
 $process.WaitForExit()
+$probe = $outTask.Result
+$err = $errTask.Result
+if (Test-Path $requestPath) { Remove-Item $requestPath -Force }
 if ($process.ExitCode -ne 0 -or $probe -notmatch '"available":\s*true') {
-  throw "Cong cu SQL khong phan hoi duoc: $probe"
+  throw "Cong cu SQL khong phan hoi duoc: $probe $err"
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem

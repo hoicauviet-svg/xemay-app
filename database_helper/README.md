@@ -9,8 +9,11 @@ GitHub Actions, and is not stored in git. SQL support on macOS requires macOS 15
 and OpenSSL, as documented by Microsoft. MongoDB Community is installed separately
 using the link in Settings.
 
-Connection strings are stored together in the macOS Keychain. They are passed to
-the helper using standard input, never command arguments, files or migration logs.
+Connection strings are stored together in the macOS Keychain. macOS passes them
+on standard input. On Windows the frozen helper cannot read a redirected pipe,
+so the app writes the request to a private temporary file, passes only that
+path, and the helper deletes the file as soon as it has read it. Credentials
+never appear in logs or migration reports.
 Runtime MongoDB URIs support regular hosts, multiple hosts and DNS seed lists;
 missing database paths default to XM. New database URIs preserve the original
 MongoDB authentication database.

@@ -135,12 +135,19 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     Process? process;
     StreamSubscription<String>? output;
     StreamSubscription<List<int>>? errors;
+    File? requestFile;
     final response = Completer<Map<String, dynamic>>();
     try {
       final executable = await _prepare();
+      if (Platform.isWindows) {
+        requestFile = File(
+          '${Directory.systemTemp.path}\\xemay-db-${DateTime.now().microsecondsSinceEpoch}.json',
+        );
+        await requestFile.writeAsString(jsonEncode(request), flush: true);
+      }
       process = await Process.start(
         executable,
-        const [],
+        requestFile == null ? const [] : [requestFile.path],
         workingDirectory: Platform.isWindows
             ? File(executable).parent.path
             : null,
@@ -181,7 +188,9 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
           );
       // Do not expose native driver output: it may contain connection details.
       errors = process.stderr.listen((_) {});
-      process.stdin.writeln(jsonEncode(request));
+      if (requestFile == null) {
+        process.stdin.writeln(jsonEncode(request));
+      }
       await process.stdin.close();
       final result = await response.future.timeout(timeout);
       if (result['__error'] is String) {
@@ -199,6 +208,11 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
         'Chưa chạy được công cụ kết nối. Kiểm tra lại bản cài đặt ứng dụng.',
       );
     } finally {
+      if (requestFile != null) {
+        try {
+          if (await requestFile.exists()) await requestFile.delete();
+        } catch (_) {}
+      }
       await output?.cancel();
       await errors?.cancel();
       process?.kill();
