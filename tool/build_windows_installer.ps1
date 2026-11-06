@@ -22,8 +22,19 @@ if ($LASTEXITCODE -ne 0) { throw 'Dong goi cong cu SQL that bai.' }
 $helper = Join-Path $root 'assets\database_helper\xemay_database_helper.exe'
 if (-not (Test-Path $helper)) { throw "Khong thay $helper" }
 
-$probe = '{"command":"checkSqlDriver"}' | & $helper | Out-String
-if ($LASTEXITCODE -ne 0 -or $probe -notmatch '"available":\s*true') {
+$start = New-Object System.Diagnostics.ProcessStartInfo
+$start.FileName = $helper
+$start.RedirectStandardInput = $true
+$start.RedirectStandardOutput = $true
+$start.RedirectStandardError = $true
+$start.UseShellExecute = $false
+$start.CreateNoWindow = $true
+$process = [System.Diagnostics.Process]::Start($start)
+$process.StandardInput.WriteLine('{"command":"checkSqlDriver"}')
+$process.StandardInput.Close()
+$probe = $process.StandardOutput.ReadToEnd()
+$process.WaitForExit()
+if ($process.ExitCode -ne 0 -or $probe -notmatch '"available":\s*true') {
   throw "Cong cu SQL khong phan hoi duoc: $probe"
 }
 
