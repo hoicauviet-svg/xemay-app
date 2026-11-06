@@ -1,12 +1,13 @@
 # Database settings and cloning
 
-The macOS app packages `xemay_database_helper` as a Flutter asset. It includes Python,
+The app packages `xemay_database_helper` as a Flutter asset. It includes Python,
 PyMongo and Microsoft's mssql-python driver. Source and pinned build dependencies are
 in this directory; rebuild with `python tool/build_database_helper.py` from an
 isolated environment containing `requirements-build.txt`. The checked-in helper is
-built for Apple Silicon. Rebuild on Intel for an Intel release. SQL support requires
-macOS 15+ and OpenSSL, as documented by Microsoft. MongoDB Community is installed
-separately using the link in Settings.
+the Apple Silicon build. The Windows `.exe` is produced on Windows, including by
+GitHub Actions, and is not stored in git. SQL support on macOS requires macOS 15+
+and OpenSSL, as documented by Microsoft. MongoDB Community is installed separately
+using the link in Settings.
 
 Connection strings are stored together in the macOS Keychain. They are passed to
 the helper using standard input, never command arguments, files or migration logs.

@@ -92,13 +92,15 @@ dart run tool/check_database.dart
 flutter build macos --debug
 ```
 
-Bản cài Windows được đóng trên máy Windows, vì Flutter không biên dịch mục tiêu Windows từ macOS. Cần Flutter và Inno Setup 6:
+Mỗi lần đẩy lên nhánh `main`, GitHub Actions dựng công cụ sao chép SQL cho Windows, đóng bộ cài và đăng bản phát hành. Ứng dụng tải `latest.json` cùng file cài từ bản phát hành mới nhất:
+
+`https://github.com/hoicauviet-svg/xemay-app/releases/latest`
+
+Trên máy Windows có Flutter, Python 3.12 và Inno Setup 6, có thể đóng tại chỗ:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tool\build_windows_installer.ps1
 ```
-
-File cài và `latest.json` nằm trong `build\installer`. Điền `url` trong `latest.json` bằng địa chỉ tải file cài, rồi đưa file đó lên máy chủ. Trong ứng dụng, Cài đặt → Phiên bản lưu địa chỉ của `latest.json`. Mỗi lần mở, ứng dụng tự đối chiếu phiên bản và chỉ cài sau khi người dùng đồng ý.
 
 Bản macOS yêu cầu macOS 12 trở lên. Không hỗ trợ Flutter Web do bản đầu kết nối MongoDB cục bộ qua thư viện desktop.
 

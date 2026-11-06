@@ -81,6 +81,20 @@ AppUpdateController _controller({
 );
 
 void main() {
+  test('empty settings use the GitHub release feed', () async {
+    final controller = _controller(
+      client: _Client('{}'),
+      store: MemoryUpdateSettingsStore(),
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+    expect(controller.feedUrl, githubUpdateFeedUrl);
+    expect(
+      githubUpdateFeedUrl,
+      'https://github.com/hoicauviet-svg/xemay-app/releases/latest/download/latest.json',
+    );
+  });
+
   test('app version matches pubspec', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final match = RegExp(

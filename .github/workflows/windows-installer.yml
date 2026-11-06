@@ -1,0 +1,53 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.9"
+          cache: true
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: powershell -ExecutionPolicy Bypass -File tool\build_windows_installer.ps1
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $pubspec = Get-Content -Raw -Encoding UTF8 pubspec.yaml
+          if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$') {
+            throw 'Khong doc duoc version.'
+          }
+          $version = $Matches[1]
+          $tag = "v$version"
+          $setup = "build/installer/QuanLyCuaHang-Setup-$version.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete $tag --yes --cleanup-tag
+          }
+          gh release create $tag $setup "build/installer/latest.json" `
+            --title "Quan Ly Cua Hang $version" `
+            --notes "Ban cai Windows $version. Ung dung tai latest.json va file cai tu ban phat hanh nay."

@@ -44,7 +44,11 @@ class FileUpdateSettingsStore implements UpdateSettingsStore {
   @override
   Future<void> save(String url) async {
     await directory.create(recursive: true);
-    await _file.writeAsString('${url.trim()}\n', flush: true);
+    final trimmed = url.trim();
+    await _file.writeAsString(
+      trimmed.isEmpty ? '-\n' : '$trimmed\n',
+      flush: true,
+    );
   }
 }
 

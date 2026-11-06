@@ -9,7 +9,9 @@ import '../models/settings/database_settings.dart';
 
 class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
   static const _channel = MethodChannel('xemay/database_settings');
-  static const _asset = 'assets/database_helper/xemay_database_helper';
+  static final _asset = Platform.isWindows
+      ? 'assets/database_helper/xemay_database_helper.exe'
+      : 'assets/database_helper/xemay_database_helper';
   Future<String>? _executable;
 
   @override
@@ -53,7 +55,11 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
         'Chưa mở được thư mục dữ liệu ứng dụng.',
       );
     }
-    final file = File('$path/database_helper');
+    final file = File(
+      Platform.isWindows
+          ? '$path/database_helper.exe'
+          : '$path/database_helper',
+    );
     final bytes = await rootBundle.load(_asset);
     final payload = bytes.buffer.asUint8List(
       bytes.offsetInBytes,

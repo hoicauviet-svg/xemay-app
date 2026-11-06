@@ -4,3 +4,6 @@ class AppVersion {
   static const build = 1;
   static const label = '$name+$build';
 }
+
+const githubUpdateFeedUrl =
+    'https://github.com/hoicauviet-svg/xemay-app/releases/latest/download/latest.json';

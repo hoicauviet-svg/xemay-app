@@ -51,3 +51,6 @@ app.*.map.json
 .env
 .env.*
 *.pem
+
+# Windows SQL helper is built on Windows and published with the installer.
+/assets/database_helper/*.exe

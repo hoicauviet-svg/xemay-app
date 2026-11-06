@@ -69,7 +69,7 @@ class _AppUpdatePanelState extends State<AppUpdatePanel> {
           Text('Phiên bản hiện tại: ${AppVersion.label}'),
           const SizedBox(height: 8),
           const Text(
-            'Ứng dụng tự kiểm tra khi mở nếu đã lưu địa chỉ tệp phiên bản. Bản mới chỉ được cài sau khi xác nhận.',
+            'Ứng dụng tự kiểm tra bản phát hành trên GitHub khi mở. Bản mới chỉ được cài sau khi xác nhận. Lưu một địa chỉ khác để đổi nguồn, hoặc lưu ô trống để tắt kiểm tra.',
           ),
           const SizedBox(height: 20),
           TextField(

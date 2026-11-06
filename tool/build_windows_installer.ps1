@@ -1,9 +1,10 @@
-# Build the release app and the per-user Windows installer on a Windows machine.
+# Build the Windows SQL helper, the release app, and the per-user installer.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
 
-$pubspec = Get-Content -Raw -Encoding UTF8 -Path (Join-Path $root 'pubspec.yaml')
+$pubspecPath = Join-Path $root 'pubspec.yaml'
+$pubspec = Get-Content -Raw -Encoding UTF8 -Path $pubspecPath
 if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$') {
   throw 'Khong doc duoc version trong pubspec.yaml.'
 }
@@ -14,6 +15,27 @@ if ($versionFile -notmatch "static const name = '$version'" -or $versionFile -no
   throw 'lib/core/app_version.dart khong khop pubspec.yaml.'
 }
 
+python -m pip install -r (Join-Path $root 'database_helper\requirements-build.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Cai thu vien cong cu SQL that bai.' }
+python (Join-Path $root 'tool\build_database_helper.py')
+if ($LASTEXITCODE -ne 0) { throw 'Dong goi cong cu SQL that bai.' }
+$helper = Join-Path $root 'assets\database_helper\xemay_database_helper.exe'
+if (-not (Test-Path $helper)) { throw "Khong thay $helper" }
+
+$probe = '{"command":"checkSqlDriver"}' | & $helper | Out-String
+if ($LASTEXITCODE -ne 0 -or $probe -notmatch '"available":\s*true') {
+  throw "Cong cu SQL khong phan hoi duoc: $probe"
+}
+
+if ($pubspec -notmatch 'xemay_database_helper\.exe') {
+  $pubspec = $pubspec.Replace(
+    '    - assets/database_helper/xemay_database_helper',
+    "    - assets/database_helper/xemay_database_helper`r`n    - assets/database_helper/xemay_database_helper.exe"
+  )
+  [System.IO.File]::WriteAllText($pubspecPath, $pubspec, [System.Text.UTF8Encoding]::new($false))
+}
+
+flutter config --enable-windows-desktop
 flutter build windows --release
 if ($LASTEXITCODE -ne 0) { throw 'flutter build windows that bai.' }
 
@@ -29,18 +51,22 @@ if (-not $iscc) {
 & $iscc "/DAppVersion=$version" (Join-Path $root 'installer\windows\QuanLyCuaHang.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Dong goi trinh cai that bai.' }
 
-$setup = Join-Path $root "build\installer\QuanLyCuaHang-Setup-$version.exe"
+$setupName = "QuanLyCuaHang-Setup-$version.exe"
+$setup = Join-Path $root "build\installer\$setupName"
 if (-not (Test-Path $setup)) { throw "Khong thay $setup" }
 $hash = (Get-FileHash -Algorithm SHA256 -Path $setup).Hash.ToLower()
+$repository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'hoicauviet-svg/xemay-app' }
+$tag = "v$version"
+$downloadUrl = "https://github.com/$repository/releases/download/$tag/$setupName"
 $manifest = [ordered]@{
   version = $version
   build = [int]$build
-  notes = "Ban $version"
-  url = ''
+  notes = "Ban cai Windows $version"
+  url = $downloadUrl
   sha256 = $hash
 } | ConvertTo-Json
 $manifestPath = Join-Path $root 'build\installer\latest.json'
 [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
 Write-Output "Installer: $setup"
 Write-Output "Feed: $manifestPath"
-Write-Output 'Dien url trong latest.json bang dia chi tai file cai, roi dua latest.json len may chu cap nhat.'
+Write-Output "Download: $downloadUrl"

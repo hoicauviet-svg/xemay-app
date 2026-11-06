@@ -9,7 +9,10 @@ import '../models/updates/app_release.dart';
 import '../services/app_update_client.dart';
 import '../services/update_settings_store.dart';
 
-const compiledUpdateFeedUrl = String.fromEnvironment('UPDATE_FEED_URL');
+const compiledUpdateFeedUrl = String.fromEnvironment(
+  'UPDATE_FEED_URL',
+  defaultValue: githubUpdateFeedUrl,
+);
 
 enum UpdatePhase {
   idle,
@@ -71,7 +74,13 @@ class AppUpdateController extends ChangeNotifier {
 
   Future<void> load() async {
     final saved = (await store.load()).trim();
-    feedUrl = saved.isNotEmpty ? saved : compiledUpdateFeedUrl;
+    if (saved == '-') {
+      feedUrl = '';
+    } else if (saved.isNotEmpty) {
+      feedUrl = saved;
+    } else {
+      feedUrl = compiledUpdateFeedUrl;
+    }
     if (!_disposed) notifyListeners();
   }
 

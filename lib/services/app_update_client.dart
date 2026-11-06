@@ -29,6 +29,8 @@ class HttpAppUpdateClient implements AppUpdateClient {
     validateHttpUrl(url.toString());
     try {
       final request = await client.getUrl(url);
+      request.followRedirects = true;
+      request.headers.set(HttpHeaders.userAgentHeader, 'xemay-app');
       final response = await request.close().timeout(
         const Duration(seconds: 30),
       );
