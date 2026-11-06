@@ -54,3 +54,4 @@ app.*.map.json
 
 # Windows SQL helper is built on Windows and published with the installer.
 /assets/database_helper/*.exe
+/assets/database_helper/*.zip

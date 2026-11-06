@@ -2,6 +2,8 @@ import 'mongo_connection_uri.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import '../core/config/database_config.dart';
 import '../models/repositories/database_settings_repository.dart';
@@ -10,7 +12,7 @@ import '../models/settings/database_settings.dart';
 class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
   static const _channel = MethodChannel('xemay/database_settings');
   static final _asset = Platform.isWindows
-      ? 'assets/database_helper/xemay_database_helper.exe'
+      ? 'assets/database_helper/xemay_database_helper_windows.zip'
       : 'assets/database_helper/xemay_database_helper';
   Future<String>? _executable;
 
@@ -55,11 +57,8 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
         'Chưa mở được thư mục dữ liệu ứng dụng.',
       );
     }
-    final file = File(
-      Platform.isWindows
-          ? '$path/database_helper.exe'
-          : '$path/database_helper',
-    );
+    if (Platform.isWindows) return _extractWindows(path);
+    final file = File('$path/database_helper');
     final bytes = await rootBundle.load(_asset);
     final payload = bytes.buffer.asUint8List(
       bytes.offsetInBytes,
@@ -82,15 +81,50 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       await temporary.writeAsBytes(payload, flush: true);
       await temporary.rename(file.path);
     }
-    if (!Platform.isWindows) {
-      final permission = await Process.run('/bin/chmod', ['700', file.path]);
-      if (permission.exitCode != 0) {
-        throw const DatabaseSettingsException(
-          'Chưa chuẩn bị được công cụ kết nối dữ liệu.',
-        );
-      }
+    final permission = await Process.run('/bin/chmod', ['700', file.path]);
+    if (permission.exitCode != 0) {
+      throw const DatabaseSettingsException(
+        'Chưa chuẩn bị được công cụ kết nối dữ liệu.',
+      );
     }
     return file.path;
+  }
+
+  Future<String> _extractWindows(String path) async {
+    final bytes = await rootBundle.load(_asset);
+    final payload = bytes.buffer.asUint8List(
+      bytes.offsetInBytes,
+      bytes.lengthInBytes,
+    );
+    final digest = sha256.convert(payload).toString();
+    final folder = Directory('$path\\database_helper_windows');
+    final stamp = File('$path\\database_helper_windows.sha256');
+    final current = await stamp.exists()
+        ? (await stamp.readAsString()).trim()
+        : '';
+    if (current != digest) {
+      if (await folder.exists()) await folder.delete(recursive: true);
+      await folder.create(recursive: true);
+      for (final entry in ZipDecoder().decodeBytes(payload)) {
+        final name = entry.name.replaceAll('\\', '/');
+        if (name.isEmpty || name.contains('..')) continue;
+        final out = File('${folder.path}\\${name.replaceAll('/', '\\')}');
+        if (!entry.isFile) {
+          await Directory(out.path).create(recursive: true);
+          continue;
+        }
+        await out.parent.create(recursive: true);
+        final content = entry.content;
+        if (content is! List<int>) {
+          throw const DatabaseSettingsException(
+            'Chưa giải nén được công cụ kết nối dữ liệu.',
+          );
+        }
+        await out.writeAsBytes(content, flush: true);
+      }
+      await stamp.writeAsString('$digest\n', flush: true);
+    }
+    return '${folder.path}\\xemay_database_helper_windows.exe';
   }
 
   Future<Map<String, dynamic>> _run(
@@ -103,9 +137,13 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     StreamSubscription<List<int>>? errors;
     final response = Completer<Map<String, dynamic>>();
     try {
+      final executable = await _prepare();
       process = await Process.start(
-        await _prepare(),
+        executable,
         const [],
+        workingDirectory: Platform.isWindows
+            ? File(executable).parent.path
+            : null,
         runInShell: false,
       );
       output = process.stdout

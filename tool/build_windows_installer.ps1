@@ -19,11 +19,13 @@ python -m pip install -r (Join-Path $root 'database_helper\requirements-build.tx
 if ($LASTEXITCODE -ne 0) { throw 'Cai thu vien cong cu SQL that bai.' }
 python (Join-Path $root 'tool\build_database_helper.py')
 if ($LASTEXITCODE -ne 0) { throw 'Dong goi cong cu SQL that bai.' }
-$helper = Join-Path $root 'assets\database_helper\xemay_database_helper.exe'
+$helperDir = Join-Path $root 'build\database_helper\xemay_database_helper_windows'
+$helper = Join-Path $helperDir 'xemay_database_helper_windows.exe'
 if (-not (Test-Path $helper)) { throw "Khong thay $helper" }
 
 $start = New-Object System.Diagnostics.ProcessStartInfo
 $start.FileName = $helper
+$start.WorkingDirectory = $helperDir
 $start.RedirectStandardInput = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
@@ -38,10 +40,15 @@ if ($process.ExitCode -ne 0 -or $probe -notmatch '"available":\s*true') {
   throw "Cong cu SQL khong phan hoi duoc: $probe"
 }
 
-if ($pubspec -notmatch 'xemay_database_helper\.exe') {
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = Join-Path $root 'assets\database_helper\xemay_database_helper_windows.zip'
+if (Test-Path $zip) { Remove-Item $zip }
+[System.IO.Compression.ZipFile]::CreateFromDirectory($helperDir, $zip)
+
+if ($pubspec -notmatch 'xemay_database_helper_windows\.zip') {
   $pubspec = $pubspec.Replace(
     '    - assets/database_helper/xemay_database_helper',
-    "    - assets/database_helper/xemay_database_helper`r`n    - assets/database_helper/xemay_database_helper.exe"
+    "    - assets/database_helper/xemay_database_helper`r`n    - assets/database_helper/xemay_database_helper_windows.zip"
   )
   [System.IO.File]::WriteAllText($pubspecPath, $pubspec, [System.Text.UTF8Encoding]::new($false))
 }

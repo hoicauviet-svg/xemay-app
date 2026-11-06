@@ -8,10 +8,14 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 work = Path(tempfile.mkdtemp(prefix='xemay-db-helper-build-'))
+windows = sys.platform == 'win32'
+# A Windows onefile build starts a child process and drops redirected stdin.
+# The app talks to the helper through stdin, so Windows uses a folder build.
 command = [
-    sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile',
-    '--name', 'xemay_database_helper',
-    '--distpath', str(root / 'assets/database_helper'),
+    sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
+    '--onedir' if windows else '--onefile',
+    '--name', 'xemay_database_helper_windows' if windows else 'xemay_database_helper',
+    '--distpath', str(root / ('build/database_helper' if windows else 'assets/database_helper')),
     '--workpath', str(work / 'build'),
     '--specpath', str(work / 'spec'),
     '--paths', str(root / 'database_helper'),
@@ -40,8 +44,9 @@ for binary in package_dir.rglob('*'):
 
 command += [str(root / 'database_helper/bridge.py')]
 subprocess.run(command, cwd=root, check=True)
-expected = root / 'assets/database_helper' / (
-    'xemay_database_helper.exe' if sys.platform == 'win32' else 'xemay_database_helper'
+expected = (
+    root / 'build/database_helper/xemay_database_helper_windows/xemay_database_helper_windows.exe'
+    if windows else root / 'assets/database_helper/xemay_database_helper'
 )
 if not expected.is_file():
     raise SystemExit(f'Không thấy {expected}')
