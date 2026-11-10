@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   installer:
     runs-on: windows-latest
@@ -42,12 +46,18 @@ jobs:
             throw 'Khong doc duoc version.'
           }
           $version = $Matches[1]
-          $tag = "v$version"
+          $build = $Matches[2]
+          $tag = "v$version-build.$build"
           $setup = "build/installer/QuanLyCuaHang-Setup-$version.exe"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release delete $tag --yes --cleanup-tag
+            gh release upload $tag $setup "build/installer/latest.json" --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Tai bo cai len GitHub that bai.' }
+            gh release edit $tag --latest
+          } else {
+            gh release create $tag $setup "build/installer/latest.json" `
+              --target $env:GITHUB_SHA --latest `
+              --title "Quan Ly Cua Hang $version+$build" `
+              --notes "Ban cai Windows $version+$build. Ung dung tai latest.json va file cai tu ban phat hanh nay."
           }
-          gh release create $tag $setup "build/installer/latest.json" `
-            --title "Quan Ly Cua Hang $version" `
-            --notes "Ban cai Windows $version. Ung dung tai latest.json va file cai tu ban phat hanh nay."
+          if ($LASTEXITCODE -ne 0) { throw 'Dang ban phat hanh GitHub that bai.' }

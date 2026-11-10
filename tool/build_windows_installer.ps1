@@ -83,7 +83,7 @@ $setup = Join-Path $root "build\installer\$setupName"
 if (-not (Test-Path $setup)) { throw "Khong thay $setup" }
 $hash = (Get-FileHash -Algorithm SHA256 -Path $setup).Hash.ToLower()
 $repository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'hoicauviet-svg/xemay-app' }
-$tag = "v$version"
+$tag = "v$version-build.$build"
 $downloadUrl = "https://github.com/$repository/releases/download/$tag/$setupName"
 $manifest = [ordered]@{
   version = $version
