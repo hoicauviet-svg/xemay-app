@@ -9,6 +9,13 @@ GitHub Actions, and is not stored in git. SQL support on macOS requires macOS 15
 and OpenSSL, as documented by Microsoft. MongoDB Community is installed separately
 using the link in Settings.
 
+SQL connections accept Windows authentication directly, for example
+`Server=.\SQLEXPRESS;Database=XM;Trusted_Connection=True;`.
+`Integrated Security=SSPI` is also accepted. These use the Windows account
+running the app, which must have access to `XM`; omit UID and PWD.
+SQL username/password connections continue to work. TLS encryption and
+certificate validation remain enabled by default.
+
 Connection strings are stored together in the macOS Keychain. macOS passes them
 on standard input. On Windows the frozen helper cannot read a redirected pipe,
 so the app writes the request to a private temporary file, passes only that

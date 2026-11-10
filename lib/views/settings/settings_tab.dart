@@ -212,6 +212,11 @@ class _SettingsTabState extends State<SettingsTab> {
         children: [
           _messages(),
           _connection(mongo: false),
+          const SizedBox(height: 12),
+          const Text(
+            r'Xác thực Windows: Server=.\SQLEXPRESS;Database=XM;Trusted_Connection=True;'
+            '\nDùng tài khoản Windows đang chạy ứng dụng, không cần UID hoặc PWD.',
+          ),
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
