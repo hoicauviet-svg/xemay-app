@@ -11,6 +11,7 @@ import 'models/repositories/customer_repository.dart';
 import 'models/repositories/partner_repository.dart';
 import 'models/repositories/service_repository.dart';
 import 'models/repositories/sales_repository.dart';
+import 'models/repositories/batch_repository.dart';
 import 'models/repositories/directory_repository.dart';
 import 'views/dashboard/dashboard_screen.dart';
 
@@ -22,6 +23,7 @@ class StoreApp extends StatelessWidget {
     this.partnerRepositoryFactory,
     this.serviceRepositoryFactory,
     this.directoryRepositoryFactory,
+    this.batchRepositoryFactory,
     this.pawnRepositoryFactory,
     this.financeRepositoryFactory,
     this.openingDebtRepositoryFactory,
@@ -34,6 +36,7 @@ class StoreApp extends StatelessWidget {
   final PartnerRepository Function()? partnerRepositoryFactory;
   final ServiceRepository Function()? serviceRepositoryFactory;
   final DirectoryRepository Function()? directoryRepositoryFactory;
+  final BatchRepository Function()? batchRepositoryFactory;
   final PawnRepository Function()? pawnRepositoryFactory;
   final FinanceRepository Function()? financeRepositoryFactory;
   final OpeningDebtRepository Function()? openingDebtRepositoryFactory;
@@ -56,6 +59,7 @@ class StoreApp extends StatelessWidget {
       partnerRepositoryFactory: partnerRepositoryFactory,
       serviceRepositoryFactory: serviceRepositoryFactory,
       directoryRepositoryFactory: directoryRepositoryFactory,
+      batchRepositoryFactory: batchRepositoryFactory,
       pawnRepositoryFactory: pawnRepositoryFactory,
       financeRepositoryFactory: financeRepositoryFactory,
       openingDebtRepositoryFactory: openingDebtRepositoryFactory,

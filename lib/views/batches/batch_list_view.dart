@@ -16,11 +16,13 @@ class BatchListView extends StatefulWidget {
     required this.repository,
     this.directoryRepository,
     required this.onCreate,
+    this.onCreateSingle,
   });
   final ReceiptProductType type;
   final BatchRepository repository;
   final DirectoryRepository? directoryRepository;
   final Future<void> Function() onCreate;
+  final Future<void> Function()? onCreateSingle;
   @override
   State<BatchListView> createState() => _BatchListViewState();
 }
@@ -44,6 +46,11 @@ class _BatchListViewState extends State<BatchListView> {
 
   Future<void> _create() async {
     await widget.onCreate();
+    if (mounted) await _controller.load();
+  }
+
+  Future<void> _createSingle() async {
+    await widget.onCreateSingle!();
     if (mounted) await _controller.load();
   }
 
@@ -90,20 +97,56 @@ class _BatchListViewState extends State<BatchListView> {
                   icon: const Icon(Icons.refresh),
                 ),
                 const SizedBox(width: 8),
-                SizedBox(
-                  height: 48,
-                  child: bounds.maxWidth >= 650
-                      ? FilledButton.icon(
-                          onPressed: _create,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Nhập lô hàng'),
-                        )
-                      : IconButton.filled(
-                          tooltip: 'Nhập lô hàng',
-                          onPressed: _create,
-                          icon: const Icon(Icons.add),
+                widget.onCreateSingle == null
+                    ? SizedBox(
+                        height: 48,
+                        child: bounds.maxWidth >= 650
+                            ? FilledButton.icon(
+                                onPressed: _create,
+                                icon: const Icon(Icons.add),
+                                label: const Text('Nhập lô hàng'),
+                              )
+                            : IconButton.filled(
+                                tooltip: 'Nhập lô hàng',
+                                onPressed: _create,
+                                icon: const Icon(Icons.add),
+                              ),
+                      )
+                    : PopupMenuButton<ReceiptMode>(
+                        tooltip: 'Nhập hàng',
+                        offset: const Offset(0, 52),
+                        onSelected: (mode) => unawaited(
+                          mode == ReceiptMode.single
+                              ? _createSingle()
+                              : _create(),
                         ),
-                ),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: ReceiptMode.single,
+                            child: Text('Nhập lẻ'),
+                          ),
+                          PopupMenuItem(
+                            value: ReceiptMode.batch,
+                            child: Text('Nhập lô'),
+                          ),
+                        ],
+                        child: const SizedBox(
+                          key: ValueKey('receipt-add'),
+                          width: 48,
+                          height: 48,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xFF176455),
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(10),
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(Icons.add, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
               ],
             ),
           ),
@@ -177,6 +220,9 @@ class _BatchListViewState extends State<BatchListView> {
       );
     }
     return ScrollableDataTable(
+      fixedHeader: true,
+      fitWidth: true,
+      columnWidths: const [90, 130, 200, 260, 110, 140, 140],
       columns: const [
         DataColumn(label: Text('MÃ LÔ')),
         DataColumn(label: Text('NGÀY NHẬP')),
@@ -212,25 +258,9 @@ class _BatchListViewState extends State<BatchListView> {
                 ),
               ),
               DataCell(
-                SizedBox(
-                  width: 150,
-                  child: Text(
-                    batch.deliveredBy.isEmpty ? '—' : batch.deliveredBy,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                Text(batch.deliveredBy.isEmpty ? '—' : batch.deliveredBy),
               ),
-              DataCell(
-                SizedBox(
-                  width: 160,
-                  child: Text(
-                    batch.origin.isEmpty ? '—' : batch.origin,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
+              DataCell(Text(batch.origin.isEmpty ? '—' : batch.origin)),
               DataCell(
                 Text(batch.quantity == null ? '—' : quantity(batch.quantity!)),
               ),

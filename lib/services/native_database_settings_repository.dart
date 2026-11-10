@@ -177,11 +177,21 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
                 }
               }
             },
-            onDone: () {
+            onDone: () async {
+              final exitCode = await process!.exitCode;
               if (!response.isCompleted) {
                 response.complete({
                   '__error':
-                      'Công cụ dữ liệu đã dừng. Dữ liệu đang dùng được giữ nguyên.',
+                      'Công cụ dữ liệu đã dừng (mã $exitCode). '
+                      'Kiểm tra hoặc cập nhật bản cài đặt. Dữ liệu đang dùng được giữ nguyên.',
+                });
+              }
+            },
+            onError: (Object error) {
+              if (!response.isCompleted) {
+                response.complete({
+                  '__error': 'Không đọc được phản hồi từ công cụ dữ liệu. '
+                      'Kiểm tra hoặc cập nhật bản cài đặt.',
                 });
               }
             },

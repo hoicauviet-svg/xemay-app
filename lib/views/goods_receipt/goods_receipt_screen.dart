@@ -15,55 +15,91 @@ class GoodsReceiptScreen extends StatefulWidget {
     super.key,
     required this.type,
     this.batchRepository,
+    this.batchRepositoryFactory,
     this.directoryRepository,
+    this.directoryRepositoryFactory,
+    this.showTopBar = true,
   });
   final ReceiptProductType type;
   final BatchRepository? batchRepository;
+  final BatchRepository Function()? batchRepositoryFactory;
   final DirectoryRepository? directoryRepository;
+  final DirectoryRepository Function()? directoryRepositoryFactory;
+  final bool showTopBar;
   @override
   State<GoodsReceiptScreen> createState() => _GoodsReceiptScreenState();
 }
 
 class _GoodsReceiptScreenState extends State<GoodsReceiptScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs;
+  TabController? _tabs;
   late final BatchRepository _batches;
+  late final bool _ownsBatches;
+  DirectoryRepository? _directory;
+  late final bool _ownsDirectory;
   int _index = 0;
   bool _visitedBatches = false;
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
-    _batches = widget.batchRepository ?? MongoBatchRepository();
+    if (widget.showTopBar) _tabs = TabController(length: 2, vsync: this);
+    if (widget.batchRepository != null) {
+      _batches = widget.batchRepository!;
+      _ownsBatches = false;
+    } else {
+      _batches =
+          widget.batchRepositoryFactory?.call() ?? MongoBatchRepository();
+      _ownsBatches = true;
+    }
+    if (widget.directoryRepository != null) {
+      _directory = widget.directoryRepository;
+      _ownsDirectory = false;
+    } else if (widget.directoryRepositoryFactory != null) {
+      _directory = widget.directoryRepositoryFactory!.call();
+      _ownsDirectory = true;
+    } else {
+      _ownsDirectory = false;
+    }
+    if (!widget.showTopBar) _visitedBatches = true;
   }
 
   @override
   void dispose() {
-    _tabs.dispose();
-    if (widget.batchRepository == null) unawaited(_batches.close());
+    _tabs?.dispose();
+    if (_ownsBatches) unawaited(_batches.close());
+    if (_ownsDirectory) unawaited(_directory!.close());
     super.dispose();
   }
 
-  Future<void> _newBatch() async {
+  Future<void> _openForm(ReceiptMode mode, {String? title}) async {
     await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => FormPopup(
-        title: 'Nhập lô hàng',
+        title:
+            title ?? (mode == ReceiptMode.batch ? 'Nhập lô hàng' : 'Nhập lẻ'),
         child: GoodsReceiptFormScreen(
           type: widget.type,
-          initialMode: ReceiptMode.batch,
+          initialMode: mode,
           embedded: true,
-          directoryRepository: widget.directoryRepository,
+          directoryRepository: _directory,
         ),
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppTopBar(title: widget.type.title),
-    body: Column(
+  Widget build(BuildContext context) {
+    if (!widget.showTopBar) {
+      return BatchListView(
+        type: widget.type,
+        repository: _batches,
+        directoryRepository: _directory,
+        onCreate: () => _openForm(ReceiptMode.batch, title: 'Nhập lô'),
+        onCreateSingle: () => _openForm(ReceiptMode.single, title: 'Nhập lẻ'),
+      );
+    }
+    final body = Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
@@ -74,7 +110,7 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen>
               border: Border.all(color: const Color(0xFFE5EAED)),
             ),
             child: TabBar(
-              controller: _tabs,
+              controller: _tabs!,
               isScrollable: true,
               tabAlignment: TabAlignment.start,
               labelColor: const Color(0xFF176455),
@@ -102,14 +138,14 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen>
               GoodsReceiptFormScreen(
                 type: widget.type,
                 embedded: true,
-                directoryRepository: widget.directoryRepository,
+                directoryRepository: _directory,
               ),
               if (_visitedBatches)
                 BatchListView(
                   type: widget.type,
                   repository: _batches,
-                  directoryRepository: widget.directoryRepository,
-                  onCreate: _newBatch,
+                  directoryRepository: _directory,
+                  onCreate: () => _openForm(ReceiptMode.batch),
                 )
               else
                 const SizedBox.shrink(),
@@ -117,6 +153,10 @@ class _GoodsReceiptScreenState extends State<GoodsReceiptScreen>
           ),
         ),
       ],
-    ),
-  );
+    );
+    return Scaffold(
+      appBar: AppTopBar(title: widget.type.title),
+      body: body,
+    );
+  }
 }

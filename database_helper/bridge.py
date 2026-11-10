@@ -26,7 +26,9 @@ logging.disable(logging.CRITICAL)
 
 
 def emit(kind, **values):
-    print(json.dumps({'event':kind, **values},ensure_ascii=False),flush=True)
+    # Redirected Windows streams may use an ANSI encoding. JSON escapes keep
+    # Vietnamese errors readable by Dart without crashing the helper itself.
+    print(json.dumps({'event':kind, **values},ensure_ascii=True),flush=True)
 
 
 def parse_connection(value):

@@ -1,4 +1,6 @@
 import 'package:xemay_app/core/config/database_config.dart';
+import 'support/fake_batch_repository.dart';
+import 'support/fake_directory_repository.dart';
 import 'support/fake_database_settings_repository.dart';
 import 'support/fake_reports_repository.dart';
 import 'support/fake_sales_repository.dart';
@@ -97,6 +99,61 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('Nhập hàng opens receipt tabs for each product type', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      StoreApp(
+        databaseSettingsRepositoryFactory: FakeDatabaseSettingsRepository.new,
+        salesRepositoryFactory: FakeSalesRepository.new,
+        inventoryRepositoryFactory: FakeInventoryRepository.new,
+        serviceRepositoryFactory: FakeServiceRepository.new,
+        directoryRepositoryFactory: FakeDirectoryRepository.new,
+        batchRepositoryFactory: FakeBatchRepository.new,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nhập hàng'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(Tab, 'Nhập xe mới'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Mua xe cũ'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Nhập phụ tùng'), findsOneWidget);
+    expect(find.text('Tìm mã lô, vận chuyển, đối tác…'), findsOneWidget);
+    expect(find.text('#42'), findsOneWidget);
+    final table = tester.renderObject<RenderBox>(
+      find.byKey(const ValueKey('fixed-table-heading')),
+    );
+    final viewport = tester.renderObject<RenderBox>(
+      find.byKey(const ValueKey('fixed-table-horizontal')),
+    );
+    expect(table.size.width, viewport.size.width);
+    await tester.tap(find.byTooltip('Nhập hàng'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nhập lẻ'), findsOneWidget);
+    expect(find.text('Nhập lô'), findsOneWidget);
+    await tester.tap(find.text('Nhập lẻ'));
+    await tester.pumpAndSettle();
+    expect(find.text('Thông tin phiếu nhập'), findsOneWidget);
+    expect(find.text('Tên xe'), findsOneWidget);
+    await tester.tap(find.byTooltip('Đóng'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Nhập hàng'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Nhập lô'));
+    await tester.pumpAndSettle();
+    expect(find.text('Thông tin lô nhập'), findsOneWidget);
+    await tester.tap(find.byTooltip('Đóng'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(Tab, 'Nhập phụ tùng'));
+    await tester.pumpAndSettle();
+    expect(find.text('Chưa có lô hàng.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Narrow windows can open a group through the drawer', (
     tester,

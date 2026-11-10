@@ -16,6 +16,7 @@ import '../../models/repositories/customer_repository.dart';
 import '../../models/repositories/partner_repository.dart';
 import '../../models/repositories/service_repository.dart';
 import '../../models/repositories/sales_repository.dart';
+import '../../models/repositories/batch_repository.dart';
 import '../../models/repositories/directory_repository.dart';
 import '../../services/mongo_sales_repository.dart';
 import 'dart:async';
@@ -30,6 +31,8 @@ import '../../controllers/cart_controller.dart';
 import '../../services/mongo_customer_repository.dart';
 import '../products/product_tab.dart';
 import '../products/service_tab.dart';
+import '../goods_receipt/goods_receipt_screen.dart';
+import '../../models/goods_receipt/goods_receipt_models.dart';
 import '../../models/dashboard/dashboard_module.dart';
 import '../cart/dashboard_cart_button.dart';
 import '../sales/sales_tab.dart';
@@ -48,6 +51,7 @@ class DashboardScreen extends StatefulWidget {
     this.partnerRepositoryFactory,
     this.serviceRepositoryFactory,
     this.directoryRepositoryFactory,
+    this.batchRepositoryFactory,
     this.pawnRepositoryFactory,
     this.financeRepositoryFactory,
     this.openingDebtRepositoryFactory,
@@ -60,6 +64,7 @@ class DashboardScreen extends StatefulWidget {
   final PartnerRepository Function()? partnerRepositoryFactory;
   final ServiceRepository Function()? serviceRepositoryFactory;
   final DirectoryRepository Function()? directoryRepositoryFactory;
+  final BatchRepository Function()? batchRepositoryFactory;
   final PawnRepository Function()? pawnRepositoryFactory;
   final FinanceRepository Function()? financeRepositoryFactory;
   final OpeningDebtRepository Function()? openingDebtRepositoryFactory;
@@ -182,6 +187,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   widget.serviceRepositoryFactory,
                               directoryRepositoryFactory:
                                   widget.directoryRepositoryFactory,
+                              batchRepositoryFactory:
+                                  widget.batchRepositoryFactory,
                               pawnRepositoryFactory:
                                   widget.pawnRepositoryFactory,
                               financeRepositoryFactory:
@@ -206,6 +213,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 IconData _groupIcon(DashboardGroup group) => switch (group) {
+  DashboardGroup.goodsReceipt => Icons.move_to_inbox_outlined,
   DashboardGroup.products => Icons.inventory_2_outlined,
   DashboardGroup.customers => Icons.people_outline,
   DashboardGroup.partners => Icons.business_outlined,
@@ -333,6 +341,7 @@ class _GroupTabs extends StatelessWidget {
     this.partnerRepositoryFactory,
     this.serviceRepositoryFactory,
     this.directoryRepositoryFactory,
+    this.batchRepositoryFactory,
     this.pawnRepositoryFactory,
     this.financeRepositoryFactory,
     this.openingDebtRepositoryFactory,
@@ -344,6 +353,7 @@ class _GroupTabs extends StatelessWidget {
   final PartnerRepository Function()? partnerRepositoryFactory;
   final ServiceRepository Function()? serviceRepositoryFactory;
   final DirectoryRepository Function()? directoryRepositoryFactory;
+  final BatchRepository Function()? batchRepositoryFactory;
   final PawnRepository Function()? pawnRepositoryFactory;
   final FinanceRepository Function()? financeRepositoryFactory;
   final OpeningDebtRepository Function()? openingDebtRepositoryFactory;
@@ -412,7 +422,23 @@ class _GroupTabs extends StatelessWidget {
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   for (final module in group.modules)
-                    if (module == DashboardModule.services)
+                    if (module == DashboardModule.receiptNewVehicles ||
+                        module == DashboardModule.receiptUsedVehicles ||
+                        module == DashboardModule.receiptParts)
+                      GoodsReceiptScreen(
+                        key: ValueKey(module),
+                        showTopBar: false,
+                        batchRepositoryFactory: batchRepositoryFactory,
+                        directoryRepositoryFactory: directoryRepositoryFactory,
+                        type: switch (module) {
+                          DashboardModule.receiptUsedVehicles =>
+                            ReceiptProductType.usedVehicle,
+                          DashboardModule.receiptParts =>
+                            ReceiptProductType.part,
+                          _ => ReceiptProductType.newVehicle,
+                        },
+                      )
+                    else if (module == DashboardModule.services)
                       ServiceTab(repository: serviceRepositoryFactory?.call())
                     else if (module == DashboardModule.pawnContracts)
                       PawnTab(

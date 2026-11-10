@@ -2,6 +2,11 @@ import 'dashboard_module.dart';
 
 /// Business groups shared by the sidebar and section tabs.
 enum DashboardGroup {
+  goodsReceipt('Nhập hàng', [
+    DashboardModule.receiptNewVehicles,
+    DashboardModule.receiptUsedVehicles,
+    DashboardModule.receiptParts,
+  ]),
   products('Sản phẩm', [
     DashboardModule.newVehicles,
     DashboardModule.usedVehicles,

@@ -92,7 +92,9 @@ dart run tool/check_database.dart
 flutter build macos --debug
 ```
 
-Mỗi lần đẩy lên nhánh `main`, GitHub Actions dựng công cụ sao chép SQL cho Windows, đóng bộ cài và đăng bản phát hành. Ứng dụng tải `latest.json` cùng file cài từ bản phát hành mới nhất:
+Bấm đúp `tool/release.command` trong Finder. File này tăng số build thêm 1 (ví dụ `1.0.0+1` thành `1.0.0+2`), commit rồi đẩy nhánh `main`. Cửa sổ Terminal ở lại đến khi nhấn Enter.
+
+GitHub Actions dựng công cụ sao chép SQL cho Windows, đóng bộ cài và đăng bản phát hành. Ứng dụng so số build này với `latest.json`, rồi tải file cài từ bản phát hành mới nhất:
 
 `https://github.com/hoicauviet-svg/xemay-app/releases/latest`
 

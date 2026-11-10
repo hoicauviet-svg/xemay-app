@@ -44,6 +44,11 @@ if ($process.ExitCode -ne 0 -or $probe -notmatch '"available":\s*true') {
   throw "Cong cu SQL khong phan hoi duoc: $probe $err"
 }
 
+# Exercise a Vietnamese SQL error too: importing the driver alone does not
+# detect crashes while writing non-ASCII text to a redirected Windows pipe.
+python (Join-Path $root 'tool\check_database_helper.py') $helper
+if ($LASTEXITCODE -ne 0) { throw 'Kiem tra phan hoi loi SQL that bai.' }
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = Join-Path $root 'assets\database_helper\xemay_database_helper_windows.zip'
 if (Test-Path $zip) { Remove-Item $zip }
