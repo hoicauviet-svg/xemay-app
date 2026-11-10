@@ -15,10 +15,10 @@ if ($versionFile -notmatch "static const name = '$version'" -or $versionFile -no
   throw 'lib/core/app_version.dart khong khop pubspec.yaml.'
 }
 
+python -m pip install -r (Join-Path $root 'database_helper\requirements-build.txt') -r (Join-Path $root 'database_helper\requirements-test.txt')
+if ($LASTEXITCODE -ne 0) { throw 'Cai thu vien cong cu du lieu that bai.' }
 python -m unittest discover -s (Join-Path $root 'database_helper\tests') -v
-if ($LASTEXITCODE -ne 0) { throw 'Kiem tra xac thuc SQL that bai.' }
-python -m pip install -r (Join-Path $root 'database_helper\requirements-build.txt')
-if ($LASTEXITCODE -ne 0) { throw 'Cai thu vien cong cu SQL that bai.' }
+if ($LASTEXITCODE -ne 0) { throw 'Kiem tra cong cu du lieu that bai.' }
 python (Join-Path $root 'tool\build_database_helper.py')
 if ($LASTEXITCODE -ne 0) { throw 'Dong goi cong cu SQL that bai.' }
 $helperDir = Join-Path $root 'build\database_helper\xemay_database_helper_windows'

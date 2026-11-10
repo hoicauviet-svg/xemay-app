@@ -25,7 +25,7 @@ def log_path():
 
 def redact(text, request):
     secrets = []
-    for key in ('sqlConnection', 'mongoUri'):
+    for key in ('sqlConnection', 'mongoUri', 'cloudUri', 'sourceUri', 'targetUri'):
         raw = request.get(key)
         if isinstance(raw, str) and raw:
             secrets.append(raw)
@@ -60,7 +60,7 @@ def record_error(error, request, path=None):
             details.extend(traceback.format_exception(type(current), current, current.__traceback__, chain=False))
             current = current.__cause__ or current.__context__
         command = request.get('command', 'unknown')
-        if command not in ('probeSql', 'probeMongo', 'clone', 'checkSqlDriver'):
+        if command not in ('probeSql', 'probeMongo', 'clone', 'checkSqlDriver', 'syncCloud'):
             command = 'unknown'
         entry = {
             'time': datetime.now(timezone.utc).isoformat(),

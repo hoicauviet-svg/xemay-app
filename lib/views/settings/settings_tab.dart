@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../controllers/database_settings_controller.dart';
 import '../../models/repositories/database_settings_repository.dart';
@@ -15,6 +16,9 @@ class SettingsTab extends StatefulWidget {
 class _SettingsTabState extends State<SettingsTab> {
   late final DatabaseSettingsController _controller;
   final _mongo = TextEditingController(), _sql = TextEditingController();
+  final _cloud = TextEditingController();
+  bool _showCloud = false;
+  String? _loadedCloud;
   bool _showMongo = false, _showSql = false;
   String? _loadedMongo, _loadedSql;
   @override
@@ -31,6 +35,10 @@ class _SettingsTabState extends State<SettingsTab> {
   void _changed() {
     if (!mounted) return;
     if (_controller.loaded) {
+      if (_loadedCloud != _controller.settings.cloudUri) {
+        _cloud.text = _controller.settings.cloudUri;
+        _loadedCloud = _cloud.text;
+      }
       if (_loadedMongo != _controller.settings.mongoUri) {
         _mongo.text = _controller.settings.mongoUri;
         _loadedMongo = _mongo.text;
@@ -49,6 +57,7 @@ class _SettingsTabState extends State<SettingsTab> {
     _controller.dispose();
     _mongo.dispose();
     _sql.dispose();
+    _cloud.dispose();
     super.dispose();
   }
 
@@ -203,6 +212,160 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
+  Future<void> _syncCloud(bool upload) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          upload ? 'Đồng bộ dữ liệu lên cloud?' : 'Tải dữ liệu từ cloud về?',
+        ),
+        content: Text(
+          upload
+              ? 'Sao chép toàn bộ dữ liệu đang dùng thành một bản mới trên cloud. Hãy dừng nhập liệu trên các máy trong lúc đồng bộ. Bản cloud trước được giữ lại.'
+              : 'Sao chép toàn bộ dữ liệu cloud thành một bản mới trên máy và chuyển ứng dụng sang bản này sau khi kiểm tra. Dữ liệu cũ được giữ lại. Hãy dừng nhập liệu trên các máy trong lúc đồng bộ.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Tiếp tục'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            title: const Text('Đang đồng bộ dữ liệu'),
+            content: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(
+                    _controller.progress.isEmpty
+                        ? 'Đang kết nối…'
+                        : _controller.progress.last,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    try {
+      await _controller.syncCloud(upload: upload);
+    } finally {
+      if (navigator.mounted) navigator.pop();
+    }
+  }
+
+  Widget _cloudPage() => SingleChildScrollView(
+    padding: const EdgeInsets.all(24),
+    child: FormSection(
+      title: null,
+      children: [
+        _messages(),
+        const Text('MongoDB Cloud'),
+        const SizedBox(height: 12),
+        const Text(
+          'Nhập chuỗi kết nối MongoDB Atlas hoặc máy chủ MongoDB từ xa, gồm tên database. Cho phép IP máy này truy cập trên cloud và cấp tài khoản quyền đọc/ghi, tạo database bản sao.',
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          key: const ValueKey('settings-cloud-uri'),
+          controller: _cloud,
+          onChanged: (_) => setState(() {}),
+          enabled: !_controller.busy,
+          obscureText: !_showCloud,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: InputDecoration(
+            labelText: 'Chuỗi kết nối cloud',
+            hintText: 'mongodb+srv://user:password@cluster.mongodb.net/XM',
+            suffixIcon: IconButton(
+              tooltip: _showCloud ? 'Ẩn chuỗi cloud' : 'Hiện chuỗi cloud',
+              onPressed: () => setState(() => _showCloud = !_showCloud),
+              icon: Icon(
+                _showCloud
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('settings-check-cloud'),
+              onPressed: _controller.busy
+                  ? null
+                  : () => _controller.checkCloud(_cloud.text),
+              icon: const Icon(Icons.sync),
+              label: const Text('Kiểm tra kết nối'),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey('settings-save-cloud'),
+              onPressed: _controller.busy
+                  ? null
+                  : () => _controller.checkCloud(_cloud.text, save: true),
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Lưu kết nối cloud'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Lưu kết nối trước khi đồng bộ. Đồng bộ toàn bộ dữ liệu theo bản sao; không tự gộp các thay đổi giữa nhiều máy.',
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton.icon(
+              key: const ValueKey('settings-upload-cloud'),
+              onPressed:
+                  _controller.busy ||
+                      _controller.settings.cloudUri.isEmpty ||
+                      _cloud.text.trim() != _controller.settings.cloudUri
+                  ? null
+                  : () => _syncCloud(true),
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Đồng bộ lên cloud'),
+            ),
+            FilledButton.icon(
+              key: const ValueKey('settings-download-cloud'),
+              onPressed:
+                  _controller.busy ||
+                      _controller.settings.cloudUri.isEmpty ||
+                      _cloud.text.trim() != _controller.settings.cloudUri
+                  ? null
+                  : () => _syncCloud(false),
+              icon: const Icon(Icons.cloud_download_outlined),
+              label: const Text('Tải dữ liệu từ cloud'),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
   Widget _sqlPage() {
     final result = _controller.cloneResult;
     return SingleChildScrollView(
@@ -299,7 +462,7 @@ class _SettingsTabState extends State<SettingsTab> {
 
   @override
   Widget build(BuildContext context) => DefaultTabController(
-    length: 3,
+    length: 4,
     child: Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -314,12 +477,18 @@ class _SettingsTabState extends State<SettingsTab> {
             tabs: [
               Tab(text: 'MongoDB'),
               Tab(text: 'SQL Server'),
+              Tab(text: 'MongoDB Cloud'),
               Tab(text: 'Phiên bản'),
             ],
           ),
           Expanded(
             child: TabBarView(
-              children: [_mongoPage(), _sqlPage(), const AppUpdatePanel()],
+              children: [
+                _mongoPage(),
+                _sqlPage(),
+                _cloudPage(),
+                const AppUpdatePanel(),
+              ],
             ),
           ),
         ],

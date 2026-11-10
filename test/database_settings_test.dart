@@ -115,10 +115,12 @@ void main() {
       const settings = DatabaseSettings(
         mongoUri: 'mongodb://localhost:27017/XM',
         sqlConnection: 'Server=test;Database=xm;UID=u;PWD=example;',
+        cloudUri: 'mongodb://cloud/XM',
       );
       await repo.save(settings);
       expect(jsonDecode(stored!)['sqlConnection'], settings.sqlConnection);
       expect((await repo.load()).mongoUri, settings.mongoUri);
+      expect((await repo.load()).cloudUri, settings.cloudUri);
       expect(DatabaseConfig.mongoUri, settings.mongoUri);
     },
   );

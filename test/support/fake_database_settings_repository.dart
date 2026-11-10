@@ -47,6 +47,28 @@ class FakeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     );
   }
 
+  int syncs = 0;
+  String? syncSource, syncTarget;
+  bool failSync = false;
+  @override
+  Future<CloudSyncResult> syncCloud({
+    required String sourceUri,
+    required String targetUri,
+    required void Function(String) progress,
+  }) async {
+    syncs++;
+    syncSource = sourceUri;
+    syncTarget = targetUri;
+    if (failSync) throw const DatabaseSettingsException('Đồng bộ thất bại.');
+    progress('Đã đối chiếu dữ liệu');
+    return CloudSyncResult(
+      mongoUri: '$targetUri-sync',
+      database: 'XM_sync',
+      rows: 42,
+      collections: 3,
+    );
+  }
+
   @override
   Future<void> openMongoInstallation() async {
     installOpened = true;

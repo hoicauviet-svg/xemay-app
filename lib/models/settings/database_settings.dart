@@ -1,9 +1,14 @@
 class DatabaseSettings {
-  const DatabaseSettings({required this.mongoUri, this.sqlConnection = ''});
-  final String mongoUri, sqlConnection;
+  const DatabaseSettings({
+    required this.mongoUri,
+    this.sqlConnection = '',
+    this.cloudUri = '',
+  });
+  final String mongoUri, sqlConnection, cloudUri;
   Map<String, dynamic> toJson() => {
     'mongoUri': mongoUri,
     'sqlConnection': sqlConnection,
+    'cloudUri': cloudUri,
   };
 }
 
@@ -34,4 +39,15 @@ class DatabaseSettingsException implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+class CloudSyncResult {
+  const CloudSyncResult({
+    required this.mongoUri,
+    required this.database,
+    required this.rows,
+    required this.collections,
+  });
+  final String mongoUri, database;
+  final int rows, collections;
 }

@@ -300,3 +300,22 @@ Hai khu vực Khách hàng / Thông tin đơn hàng trong view bán hàng dùng 
 Mã lô đã mở được giữ trong ReceiptPreview.batchId và trường XeMoi.IdNhapHang. Ngày/đối tác của lô được kế thừa, không yêu cầu nhập lại. Xe nhập có một chiếc mỗi bản ghi và trạng thái Chưa bán (Xe.TinhTrang=true) theo quy ước đã đối chiếu hóa đơn; mã legacy XeMoi.TrangThai chỉ thấy 0/null nên không gán nhãn nghiệp vụ hoặc tự chọn 0. Tiền đăng ký là trường riêng, không tự cộng vào GiaNhap/tổng tiền lô. IdXe/IdSanPham sẽ do lớp lưu cấp, không cho nhập tay.
 
 ReceiptLine có ánh xạ tách biệt toVehicleFields, toVehicleDetailFields, toCatalogFields, toPartStockFields; bản xem trước giữ đầy đủ dữ liệu bổ sung. Các ánh xạ tạo mới không được dùng như lệnh ghi đè catalog/tồn kho hiện hữu. Dữ liệu gốc chỉ có liên kết lô xe mới qua XeMoi.IdNhapHang; không tự suy diễn chi tiết lô xe cũ/phụ tùng. Luồng nhập vẫn là bản nháp/xem trước, chưa ghi sản phẩm hoặc phiếu nhập vào MongoDB. Đã kiểm thử mapping, giá null/0/âm, hãng tải lỗi/thử lại và popup thêm vào đúng lô; kiểm tra lần này không thay đổi dữ liệu XM.
+
+
+### MongoDB Cloud
+
+Cài đặt → MongoDB Cloud: nhập URI `mongodb+srv://.../XM`, kiểm tra và lưu kết nối.
+Cho phép IP máy truy cập trên Atlas; tài khoản cần quyền đọc, ghi, tạo collection,
+chỉ mục và tạo database bản sao. Chuỗi kết nối được lưu cùng cấu hình kết nối trong
+kho bảo mật của hệ điều hành.
+
+- Đồng bộ lên cloud: sao chép toàn bộ database đang dùng thành database mới trên cloud,
+  giữ chỉ mục và validator, đối chiếu dữ liệu rồi cập nhật URI cloud đã lưu tới bản mới.
+- Tải dữ liệu từ cloud: tạo database mới trên máy từ URI cloud đã lưu, đối chiếu rồi
+  chuyển ứng dụng sang bản này. Database trước đó được giữ lại.
+
+Đây là đồng bộ toàn bộ theo bản sao, không tự gộp thay đổi giữa nhiều máy. Dừng nhập
+liệu trên các máy trong lúc đồng bộ; nếu phát hiện nguồn thay đổi, thao tác báo lỗi
+và không chuyển kết nối. Bản sao chưa hoàn tất có thể còn trên đích nhưng không được
+chọn sử dụng. Tài khoản chỉ có quyền trên một database cố định cần được cấp thêm
+quyền tạo database bản sao. Các view/time series chưa được hỗ trợ.

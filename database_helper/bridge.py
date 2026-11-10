@@ -23,6 +23,7 @@ from pymongo import MongoClient
 from normalization import normalize, validators
 from sql_connection import parse_connection, sql_connection
 from diagnostics import record_error
+from cloud_sync import sync_cloud
 
 logging.disable(logging.CRITICAL)
 
@@ -205,6 +206,7 @@ def main():
                 emit('result',data={'database':info[0]['name'],'tables':tables})
             finally:connection.close()
         elif command=='clone':emit('result',data=clone(request))
+        elif command=='syncCloud':emit('result',data=sync_cloud(request, lambda message: emit('progress',message=message)))
         else:raise ValueError('Yêu cầu không được hỗ trợ.')
     except ValueError as error:
         path=record_error(error, request)

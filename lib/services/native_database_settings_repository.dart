@@ -26,6 +26,7 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       mongoUri:
           json['mongoUri'] as String? ?? DatabaseConfig.configuredMongoUri,
       sqlConnection: json['sqlConnection'] as String? ?? '',
+      cloudUri: json['cloudUri'] as String? ?? '',
     );
   }
 
@@ -169,7 +170,8 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
                 } else if (item['event'] == 'error' && !response.isCompleted) {
                   final logFile = item['logFile'];
                   response.complete({
-                    '__error': '${item['message']}'
+                    '__error':
+                        '${item['message']}'
                         '${logFile is String ? '\nChi tiết lỗi: $logFile' : ''}',
                   });
                 }
@@ -194,7 +196,8 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
             onError: (Object error) {
               if (!response.isCompleted) {
                 response.complete({
-                  '__error': 'Không đọc được phản hồi từ công cụ dữ liệu. '
+                  '__error':
+                      'Không đọc được phản hồi từ công cụ dữ liệu. '
                       'Kiểm tra hoặc cập nhật bản cài đặt.',
                 });
               }
@@ -276,6 +279,25 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       rows: (report['total_rows'] as num).toInt(),
       orphans: (report['orphan_count'] as num).toInt(),
       purchases: (report['purchases_merged'] as num).toInt(),
+    );
+  }
+
+  @override
+  Future<CloudSyncResult> syncCloud({
+    required String sourceUri,
+    required String targetUri,
+    required void Function(String) progress,
+  }) async {
+    final data = await _run(
+      {'command': 'syncCloud', 'sourceUri': sourceUri, 'targetUri': targetUri},
+      progress: progress,
+      timeout: const Duration(hours: 2),
+    );
+    return CloudSyncResult(
+      mongoUri: data['mongoUri'] as String,
+      database: data['database'] as String,
+      rows: (data['rows'] as num).toInt(),
+      collections: (data['collections'] as num).toInt(),
     );
   }
 

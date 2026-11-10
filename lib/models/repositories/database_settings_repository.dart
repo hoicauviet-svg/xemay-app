@@ -10,5 +10,10 @@ abstract class DatabaseSettingsRepository {
     required String sqlConnection,
     required void Function(String) progress,
   });
+  Future<CloudSyncResult> syncCloud({
+    required String sourceUri,
+    required String targetUri,
+    required void Function(String) progress,
+  });
   Future<void> openMongoInstallation();
 }
