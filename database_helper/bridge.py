@@ -22,6 +22,7 @@ from bson import BSON, Decimal128, json_util
 from pymongo import MongoClient
 from normalization import normalize, validators
 from sql_connection import parse_connection, sql_connection
+from diagnostics import record_error
 
 logging.disable(logging.CRITICAL)
 
@@ -187,7 +188,8 @@ def main():
         command=request['command']
         if command=='probeMongo':
             try:result=probe_mongo(request['mongoUri'])
-            except Exception:
+            except Exception as error:
+                record_error(error, request)
                 paths=[shutil.which('mongod'),'/opt/homebrew/bin/mongod','/usr/local/bin/mongod']
                 result={'installed':any(p and Path(p).is_file() for p in paths),'connected':False}
             emit('result',data=result)
@@ -205,10 +207,12 @@ def main():
         elif command=='clone':emit('result',data=clone(request))
         else:raise ValueError('Yêu cầu không được hỗ trợ.')
     except ValueError as error:
-        emit('error',message=str(error));sys.exit(1)
+        path=record_error(error, request)
+        emit('error',message=str(error),logFile=path);sys.exit(1)
     except Exception as error:
         original=error.__context__ or error
-        emit('error',code=type(original).__name__,message='Không hoàn tất được kết nối hoặc sao chép. Kiểm tra chuỗi kết nối, quyền truy cập và máy chủ; dữ liệu đang dùng được giữ nguyên.')
+        path=record_error(error, request)
+        emit('error',code=type(original).__name__,logFile=path,message='Không hoàn tất được kết nối hoặc sao chép. Kiểm tra chuỗi kết nối, quyền truy cập và máy chủ; dữ liệu đang dùng được giữ nguyên.')
         sys.exit(1)
 
 if __name__=='__main__':main()

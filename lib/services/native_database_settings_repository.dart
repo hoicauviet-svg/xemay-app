@@ -167,7 +167,11 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
                     Map<String, dynamic>.from(item['data'] as Map),
                   );
                 } else if (item['event'] == 'error' && !response.isCompleted) {
-                  response.complete({'__error': item['message'] as String});
+                  final logFile = item['logFile'];
+                  response.complete({
+                    '__error': '${item['message']}'
+                        '${logFile is String ? '\nChi tiết lỗi: $logFile' : ''}',
+                  });
                 }
               } catch (_) {
                 if (!response.isCompleted) {

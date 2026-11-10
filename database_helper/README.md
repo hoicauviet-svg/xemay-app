@@ -16,6 +16,13 @@ running the app, which must have access to `XM`; omit UID and PWD.
 SQL username/password connections continue to work. TLS encryption and
 certificate validation remain enabled by default.
 
+Failed SQL operations write sanitized exception chains (including native driver
+messages, SQLSTATE codes, and traceback locations) to
+`%APPDATA%\vn.cuahang.xemayApp\logs\database-helper.log` on Windows.
+The UI displays this path after an error. Logs rotate at 2 MiB, retaining two
+older files. Connection strings and SQL passwords are redacted; request payloads
+and traceback local variables are not recorded.
+
 Connection strings are stored together in the macOS Keychain. macOS passes them
 on standard input. On Windows the frozen helper cannot read a redirected pipe,
 so the app writes the request to a private temporary file, passes only that

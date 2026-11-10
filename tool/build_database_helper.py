@@ -24,6 +24,7 @@ command = [
     '--hidden-import', 'inventory_schema',
     '--hidden-import', 'sales_schema',
     '--hidden-import', 'sql_connection',
+    '--hidden-import', 'diagnostics',
 ]
 for package in ['mssql_python', 'mssql_python_odbc', 'mssql_py_core', 'pymongo', 'bson', 'certifi']:
     command += ['--collect-all', package]
