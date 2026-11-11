@@ -33,6 +33,7 @@ class _ServiceEditorPopupState extends State<ServiceEditorPopup> {
       _draft.name = e.name;
       _draft.description = e.description;
       _draft.price = '${e.price}';
+      _draft.cost = '${e.cost}';
     }
   }
 
@@ -112,6 +113,18 @@ class _ServiceEditorPopupState extends State<ServiceEditorPopup> {
                       keyboardType: TextInputType.number,
                       onChanged: (v) => _draft.price = v,
                       validator: (_) => _draft.priceError,
+                    ),
+                    TextFormField(
+                      key: const ValueKey('service-cost'),
+                      initialValue: _draft.cost,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(
+                        labelText: 'Giá vốn',
+                        suffixText: 'đ',
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (v) => _draft.cost = v,
+                      validator: (_) => _draft.costError,
                     ),
                   ],
                 ),

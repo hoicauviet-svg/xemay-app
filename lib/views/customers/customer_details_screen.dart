@@ -1,4 +1,5 @@
 import '../../models/customers/customer_models.dart';
+import 'customer_editor_popup.dart';
 import '../pawn/pawn_tab.dart';
 import '../../models/repositories/pawn_repository.dart';
 import '../orders/order_details_screen.dart';
@@ -38,6 +39,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
   }
 
   late final CustomerDetailsController _controller;
+  bool _busy = false;
   @override
   void initState() {
     super.initState();
@@ -102,34 +104,70 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
           return TabBarView(
             controller: _tabs,
             children: [
-              SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: FormSection(
-                  title: 'Thông tin khách hàng',
-                  children: [
-                    ResponsiveFormFields(
-                      fields: [
-                        _info('Mã khách hàng', '#${customer['IdKH']}'),
-                        _info(
-                          'Tên khách hàng',
-                          _value(customer['TenKhachHang']),
-                        ),
-                        _info('Số điện thoại', _value(customer['SoDienThoai'])),
-                        _info('CCCD', _value(customer['SoCCCD'])),
-                        _info('CMND', _value(customer['SoCMND'])),
-                        _info(
-                          'Ngày cấp',
-                          CustomerDraft.formatIssueDate(customer['NgayCap']),
-                        ),
-                        _info('Nơi cấp', _value(customer['NoiCap'])),
-                        _info(
-                          'Địa chỉ chi tiết',
-                          _value(customer['DiaChiHienThi']),
-                        ),
-                      ],
+              Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: FormSection(
+                        title: 'Thông tin khách hàng',
+                        children: [
+                          ResponsiveFormFields(
+                            fields: [
+                              _info('Mã khách hàng', '#${customer['IdKH']}'),
+                              _info(
+                                'Tên khách hàng',
+                                _value(customer['TenKhachHang']),
+                              ),
+                              _info(
+                                'Số điện thoại',
+                                _value(customer['SoDienThoai']),
+                              ),
+                              _info('CCCD', _value(customer['SoCCCD'])),
+                              _info('CMND', _value(customer['SoCMND'])),
+                              _info(
+                                'Ngày cấp',
+                                CustomerDraft.formatIssueDate(
+                                  customer['NgayCap'],
+                                ),
+                              ),
+                              _info('Nơi cấp', _value(customer['NoiCap'])),
+                              _info(
+                                'Địa chỉ chi tiết',
+                                _value(customer['DiaChiHienThi']),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          OutlinedButton.icon(
+                            key: const ValueKey('customer-edit'),
+                            onPressed: _busy ? null : () => _edit(customer),
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text('Sửa'),
+                          ),
+                          TextButton.icon(
+                            key: const ValueKey('customer-delete'),
+                            onPressed: _busy ? null : () => _delete(customer),
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Xóa'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
               Padding(
                 padding: const EdgeInsets.all(20),
@@ -199,6 +237,65 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
       ),
     ],
   );
+  Future<void> _edit(Map<String, dynamic> customer) async {
+    final saved = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => CustomerEditorPopup(
+        initial: customer,
+        onCreate: (draft) => widget.repository.update(widget.customerId, draft),
+      ),
+    );
+    if (saved == null || !mounted) return;
+    await _controller.load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cập nhật khách hàng thành công')),
+    );
+  }
+
+  Future<void> _delete(Map<String, dynamic> customer) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa khách hàng'),
+        content: Text(
+          'Xóa khách hàng "${customer['TenKhachHang']}" (#${customer['IdKH']}) khỏi danh sách?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repository.delete(customer);
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is CustomerException
+                  ? error.message
+                  : 'Không xóa được khách hàng. Vui lòng thử lại.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _openOrder(Map<String, dynamic> row) async {
     final repository = widget.orderRepositoryFactory?.call();
     await Navigator.of(context).push<void>(

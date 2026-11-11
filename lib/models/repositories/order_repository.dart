@@ -8,6 +8,7 @@ abstract class OrderRepository {
     int orderId, {
     required DateTime date,
     required int amount,
+    int? interest,
     required String notes,
     required String requestId,
     DateTime? nextAppointment,

@@ -61,6 +61,7 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
             'SoKhung': draft.frame.trim(),
             'SoMay': draft.engine.trim(),
             'BienSo': draft.plate.trim(),
+            'MauSon': draft.color.trim(),
             'GhiChu': draft.notes.trim(),
           },
         },

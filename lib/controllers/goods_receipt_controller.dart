@@ -332,6 +332,7 @@ class GoodsReceiptController extends ChangeNotifier {
                 ? line.engineNumber.trim()
                 : '',
             plate: line.plate.trim(),
+            color: type.isVehicle ? line.color.trim() : '',
             brandId: type.isVehicle ? line.brandId : null,
             brandName: type.isVehicle ? line.brandName : '',
             salePrice: line.salePrice.trim().isEmpty

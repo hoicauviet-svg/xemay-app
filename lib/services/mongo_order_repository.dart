@@ -178,7 +178,7 @@ class MongoOrderRepository implements OrderRepository {
             'IdXe': line['IdXe'],
           });
           if (ext != null) {
-            for (final key in ['SoKhung', 'SoMay', 'BienSo']) {
+            for (final key in ['SoKhung', 'SoMay', 'BienSo', 'MauSon']) {
               if (ext[key] != null) line[key] = ext[key];
             }
           }
@@ -241,6 +241,7 @@ class MongoOrderRepository implements OrderRepository {
     int orderId, {
     required DateTime date,
     required int amount,
+    int? interest,
     required String notes,
     required String requestId,
     DateTime? nextAppointment,
@@ -271,6 +272,8 @@ class MongoOrderRepository implements OrderRepository {
           existing['SotienTra'] != amount ||
           existing['NgayTra'] != storedDate ||
           existing['GhiChu'] != notes.trim() ||
+          (interest != null &&
+              (existing['LaiThu'] as num?)?.round() != interest) ||
           (nextAppointment != null &&
               existing['NgayHenSauTra'] != OrderDetails.day(nextAppointment))) {
         throw const OrderException('Yêu cầu thanh toán đã thay đổi.');
@@ -340,16 +343,19 @@ class MongoOrderRepository implements OrderRepository {
       debts: debts,
       payments: history,
     );
-    final interest = details.interestAt(storedDate);
-    if (due <= 0 || (amount == 0 && interest == 0)) {
+    final charged = interest ?? details.interestAt(storedDate);
+    if (charged < 0 || charged > 1000000000000000) {
+      throw const OrderException('Số tiền lãi không hợp lệ.');
+    }
+    if (due <= 0 || (amount == 0 && charged == 0)) {
       throw const OrderException('Chưa có số tiền gốc hoặc tiền lãi cần thu.');
     }
-    final cash = interest > 0
+    final cash = charged > 0
         ? {
             '_id': 'order-interest-$requestId',
             'ThuChiId': await _nextPayment('ThuChiKhac', 'ThuChiId'),
             'NgayThang': storedDate,
-            'SoTien': interest,
+            'SoTien': charged,
             'ThuChi': true,
             'IdDanhMuc': 'customer-interest',
             'TenDanhMuc': 'Lãi khách hàng trả nợ',
@@ -371,8 +377,8 @@ class MongoOrderRepository implements OrderRepository {
       'SotienTra': amount,
       'NgayTra': storedDate,
       'GhiChu': notes.trim(),
-      'SoTienLai': interest,
-      'LaiThu': interest,
+      'SoTienLai': charged,
+      'LaiThu': charged,
       'ThuLaiDangLuu': ?cash,
       'NgayHenSauTra': ?(nextAppointment == null
           ? details.nextAppointmentAt(_today())

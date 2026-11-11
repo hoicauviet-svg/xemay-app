@@ -361,7 +361,7 @@ class _ProductTabState extends State<ProductTab>
                   ],
           ),
           fitWidth: true,
-          rowHeight: vehicle ? 84 : 64,
+          rowHeight: vehicle ? 102 : 64,
           columnWidths: vehicle
               ? const [70, 160, 210, 120, 120, 120, 70, 56]
               : const [140, 240, 100, 120, 150, 130, 64],
@@ -435,6 +435,7 @@ class _ProductTabState extends State<ProductTab>
         'Số khung': row['SoKhung'],
         'Số máy': row['SoMay'],
         'Biển số': row['BienSo'],
+        'Màu sơn': row['MauSon'],
       }.entries)
         Tooltip(
           message: '${entry.key}: ${_value(entry.value)}',

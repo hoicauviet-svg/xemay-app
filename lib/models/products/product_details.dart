@@ -6,7 +6,8 @@ class ProductEditDraft {
       notes = '',
       frame = '',
       engine = '',
-      plate = '';
+      plate = '',
+      color = '';
   ProductEditDraft.fromInformation(Map<String, dynamic> row, bool vehicle) {
     name = '${row[vehicle ? 'TenXe' : 'TenSanPham'] ?? ''}';
     code = '${row['MaSanPham'] ?? ''}';
@@ -19,6 +20,7 @@ class ProductEditDraft {
     frame = '${row['SoKhung'] ?? ''}';
     engine = '${row['SoMay'] ?? ''}';
     plate = '${row['BienSo'] ?? ''}';
+    color = '${row['MauSon'] ?? row['MauSac'] ?? row['Mau'] ?? ''}';
   }
   String? validate() {
     if (name.trim().isEmpty) return 'Vui lòng nhập tên sản phẩm.';

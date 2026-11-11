@@ -29,10 +29,12 @@ Future<void> main() async {
             'TenDichVu',
             'MoTa',
             'GiaTien',
+            'GiaVon',
           }).isEmpty &&
           row['TenDichVu'] == 'Thay dầu (test)' &&
           row['MoTa'] == 'Dầu động cơ' &&
-          row['GiaTien'] == 150000,
+          row['GiaTien'] == 150000 &&
+          row['GiaVon'] == 0,
       'Service fields mismatch',
     );
     check(

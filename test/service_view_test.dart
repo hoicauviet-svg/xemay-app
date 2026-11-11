@@ -32,7 +32,13 @@ void main() {
       expect(tester.getSize(add).height, 48);
       await tester.tap(add);
       await tester.pumpAndSettle();
-      expect(find.byType(TextFormField), findsNWidgets(3));
+      expect(find.byType(TextFormField), findsNWidgets(4));
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const ValueKey('service-cost')))
+            .initialValue,
+        '0',
+      );
       await tester.tap(find.text('Lưu dịch vụ'));
       await tester.pumpAndSettle();
       expect(find.text('Vui lòng nhập tên dịch vụ'), findsOneWidget);
@@ -72,6 +78,7 @@ void main() {
       expect(find.text('Thay dầu'), findsOneWidget);
       expect(find.text('150.000 đ'), findsNWidgets(2));
       expect(repository.items.single.description, 'Dầu động cơ');
+      expect(repository.items.single.cost, 0);
       await tester.tap(find.byTooltip('Thêm dịch vụ vào đơn bán hàng'));
       await tester.pumpAndSettle();
       expect(CartController.shared.items.single.service, isTrue);

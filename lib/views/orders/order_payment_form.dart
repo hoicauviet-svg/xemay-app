@@ -16,6 +16,7 @@ class OrderPaymentForm extends StatefulWidget {
   final Future<void> Function(
     DateTime date,
     int amount,
+    int interest,
     String notes,
     String requestId,
     DateTime? nextAppointment,
@@ -27,21 +28,62 @@ class OrderPaymentForm extends StatefulWidget {
 
 class _OrderPaymentFormState extends State<OrderPaymentForm> {
   final _form = GlobalKey<FormState>();
-  final _amount = TextEditingController(), _notes = TextEditingController();
+  final _amount = TextEditingController(),
+      _interest = TextEditingController(),
+      _notes = TextEditingController();
   DateTime _date = DateTime.now();
   String _requestId = ObjectId().oid;
-  (DateTime, int, String, DateTime?)? _pending;
+  (DateTime, int, int, String, DateTime?)? _pending;
   DateTime? _appointment;
+  bool _interestEdited = false;
   @override
   void initState() {
     super.initState();
     _appointment = widget.order.nextAppointmentAt(DateTime.now());
+    _syncInterest();
+  }
+
+  @override
+  void didUpdateWidget(covariant OrderPaymentForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.order != widget.order && _pending == null && !_saving) {
+      _interestEdited = false;
+      _syncInterest();
+    }
+  }
+
+  void _syncInterest() {
+    if (_interestEdited) return;
+    _interest.text = groupMoney('${widget.order.interestAt(_date)}');
+  }
+
+  int? _parsed(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return 0;
+    return int.tryParse(ungroupMoney(trimmed));
+  }
+
+  int get _principalAmount {
+    final amount = _parsed(_amount.text);
+    final due = widget.order.due ?? 0;
+    if (amount == null || amount < 0 || amount > due) return 0;
+    return amount;
+  }
+
+  num get _shownPaid => (widget.order.paid ?? 0) + _principalAmount;
+  num get _shownDue => (widget.order.due ?? 0) - _principalAmount;
+  int get _collected {
+    final principal = _parsed(_amount.text);
+    final interest = _parsed(_interest.text);
+    return (principal != null && principal >= 0 ? principal : 0) +
+        (interest != null && interest >= 0 ? interest : 0);
   }
 
   bool _saving = false;
   @override
   void dispose() {
     _amount.dispose();
+    _interest.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -63,7 +105,8 @@ class _OrderPaymentFormState extends State<OrderPaymentForm> {
       }
       _pending = (
         _date,
-        int.tryParse(ungroupMoney(_amount.text)) ?? 0,
+        _parsed(_amount.text) ?? 0,
+        _parsed(_interest.text) ?? 0,
         _notes.text.trim(),
         _appointment,
       );
@@ -75,15 +118,18 @@ class _OrderPaymentFormState extends State<OrderPaymentForm> {
         pending.$1,
         pending.$2,
         pending.$3,
-        _requestId,
         pending.$4,
+        _requestId,
+        pending.$5,
       );
       if (mounted) {
         setState(() {
           _pending = null;
           _requestId = ObjectId().oid;
+          _interestEdited = false;
           _amount.clear();
           _notes.clear();
+          _syncInterest();
         });
       }
     } on OrderException catch (e) {
@@ -138,11 +184,11 @@ class _OrderPaymentFormState extends State<OrderPaymentForm> {
                         decoration: const InputDecoration(
                           labelText: 'Đã thanh toán',
                         ),
-                        child: Text(money(widget.order.paid)),
+                        child: Text(money(_shownPaid)),
                       ),
                       InputDecorator(
                         decoration: const InputDecoration(labelText: 'Còn nợ'),
-                        child: Text(money(widget.order.due)),
+                        child: Text(money(_shownDue)),
                       ),
                       InkWell(
                         onTap: () async {
@@ -153,7 +199,10 @@ class _OrderPaymentFormState extends State<OrderPaymentForm> {
                             lastDate: DateTime(2100, 12, 31),
                           );
                           if (date != null && mounted) {
-                            setState(() => _date = date);
+                            setState(() {
+                              _date = date;
+                              _syncInterest();
+                            });
                           }
                         },
                         child: InputDecorator(
@@ -178,17 +227,17 @@ class _OrderPaymentFormState extends State<OrderPaymentForm> {
                         keyboardType: TextInputType.number,
                         inputFormatters: [const MoneyInputFormatter()],
                         validator: (v) {
-                          final amount = int.tryParse(ungroupMoney(v ?? ''));
-                          if ((amount == null && v!.trim().isNotEmpty) ||
-                              (amount ?? 0) < 0 ||
-                              (amount ?? 0) > 1000000000000000) {
+                          final amount = _parsed(v ?? '');
+                          if (amount == null ||
+                              amount < 0 ||
+                              amount > 1000000000000000) {
                             return 'Số tiền không hợp lệ';
                           }
-                          if ((amount ?? 0) == 0 &&
-                              widget.order.interestAt(_date) == 0) {
+                          final interest = _parsed(_interest.text);
+                          if (amount == 0 && (interest ?? 0) == 0) {
                             return 'Nhập số tiền trả gốc';
                           }
-                          if ((amount ?? 0) > widget.order.due!) {
+                          if (amount > widget.order.due!) {
                             return 'Số tiền vượt số còn nợ';
                           }
                           return null;
@@ -233,23 +282,32 @@ class _OrderPaymentFormState extends State<OrderPaymentForm> {
                           ),
                         ),
                       ),
-                      InputDecorator(
+                      TextFormField(
                         key: const ValueKey('order-payment-interest'),
+                        controller: _interest,
+                        onChanged: (_) =>
+                            setState(() => _interestEdited = true),
                         decoration: const InputDecoration(
                           labelText: 'Tiền lãi (2%/tháng)',
+                          suffixText: 'đ',
                         ),
-                        child: Text(money(widget.order.interestAt(_date))),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [const MoneyInputFormatter()],
+                        validator: (v) {
+                          final interest = _parsed(v ?? '');
+                          if (interest == null ||
+                              interest < 0 ||
+                              interest > 1000000000000000) {
+                            return 'Số tiền lãi không hợp lệ';
+                          }
+                          return null;
+                        },
                       ),
                       InputDecorator(
                         decoration: const InputDecoration(
                           labelText: 'Tổng tiền thu',
                         ),
-                        child: Text(
-                          money(
-                            (int.tryParse(ungroupMoney(_amount.text)) ?? 0) +
-                                widget.order.interestAt(_date),
-                          ),
-                        ),
+                        child: Text(money(_collected)),
                       ),
                     ],
                   ),

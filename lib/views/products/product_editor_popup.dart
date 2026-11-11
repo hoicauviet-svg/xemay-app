@@ -113,6 +113,7 @@ class _ProductEditorPopupState extends State<ProductEditorPopup> {
         field('Số khung', draft.frame, (v) => draft.frame = v),
         field('Số máy', draft.engine, (v) => draft.engine = v),
         field('Biển số', draft.plate, (v) => draft.plate = v),
+        field('Màu sơn', draft.color, (v) => draft.color = v),
       ] else ...[
         field('Mã sản phẩm', draft.code, (v) => draft.code = v),
         field('Đơn vị tính', draft.unit, (v) => draft.unit = v),
@@ -151,8 +152,10 @@ class _ProductEditorPopupState extends State<ProductEditorPopup> {
           ),
           bottomNavigationBar: Padding(
             padding: const EdgeInsets.all(20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 if (widget.onDelete != null)
                   TextButton.icon(
@@ -160,13 +163,11 @@ class _ProductEditorPopupState extends State<ProductEditorPopup> {
                     icon: const Icon(Icons.delete_outline),
                     label: const Text('Xóa sản phẩm'),
                   ),
-                const Spacer(),
                 if (!widget.embedded)
                   OutlinedButton(
                     onPressed: saving ? null : () => Navigator.pop(context),
                     child: const Text('Hủy'),
                   ),
-                const SizedBox(width: 12),
                 FilledButton(
                   onPressed: saving ? null : save,
                   child: Text(saving ? 'Đang lưu…' : 'Lưu thay đổi'),

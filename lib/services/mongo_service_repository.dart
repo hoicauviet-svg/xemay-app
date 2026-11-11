@@ -43,12 +43,14 @@ class MongoServiceRepository implements ServiceRepository {
       throw const ServiceException('Vui lòng nhập tên dịch vụ.');
     }
     if (draft.priceError != null) throw ServiceException(draft.priceError!);
+    if (draft.costError != null) throw ServiceException(draft.costError!);
     await _connect();
     final row = <String, dynamic>{
       '_id': ObjectId().oid,
       'TenDichVu': draft.name.trim(),
       'MoTa': draft.description.trim(),
       'GiaTien': draft.parsedPrice!,
+      'GiaVon': draft.parsedCost!,
     };
     final result = await _db.collection('DichVu').insertOne(row);
     if (!result.isSuccess || result.hasWriteErrors) {
@@ -59,7 +61,9 @@ class MongoServiceRepository implements ServiceRepository {
 
   @override
   Future<ServiceItem> update(String id, ServiceDraft draft) async {
-    if (draft.name.trim().isEmpty || draft.priceError != null) {
+    if (draft.name.trim().isEmpty ||
+        draft.priceError != null ||
+        draft.costError != null) {
       throw const ServiceException('Tên hoặc giá dịch vụ không hợp lệ.');
     }
     await _connect();
@@ -75,6 +79,7 @@ class MongoServiceRepository implements ServiceRepository {
               'TenDichVu': draft.name.trim(),
               'MoTa': draft.description.trim(),
               'GiaTien': draft.parsedPrice!,
+              'GiaVon': draft.parsedCost!,
               'NgayCapNhat': DateTime.now().toUtc(),
             },
           },

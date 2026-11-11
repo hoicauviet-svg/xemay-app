@@ -26,6 +26,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Thông tin khách hàng'), findsOneWidget);
       expect(find.text('Khách kiểm thử'), findsOneWidget);
+      expect(find.text('Sửa'), findsOneWidget);
+      expect(find.text('Xóa'), findsOneWidget);
+      expect(find.text('Gộp'), findsNothing);
       await tester.tap(find.widgetWithText(Tab, 'Đơn hàng'));
       await tester.pumpAndSettle();
       expect(find.text('#42'), findsOneWidget);

@@ -237,6 +237,8 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
                           Text('Số máy: ${line.engineNumber}'),
                         if (line.plate.isNotEmpty)
                           Text('Biển số: ${line.plate}'),
+                        if (line.color.isNotEmpty)
+                          Text('Màu sơn: ${line.color}'),
                       ],
                     ),
                   ),
@@ -302,52 +304,59 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
                       ])
                     else if (_controller.mode == ReceiptMode.single)
                       _section('Thông tin phiếu nhập', [
-                        _fields([
-                          DirectoryPicker(
-                            directory: _directory,
-                            kind: DirectoryKind.partner,
-                            fieldKey: 'receipt-partner',
-                            requiredSelection: false,
-                            initialName: _controller.partner,
-                            selectedId: _controller.partnerId,
-                            onSelected: (entry) =>
-                                _controller.selectPartner(entry.id, entry.name),
-                            onTextChanged: _controller.changePartner,
-                          ),
-                          TextFormField(
-                            key: ValueKey(_controller.date),
-                            readOnly: true,
-                            initialValue: DateFormat(
-                              'dd/MM/yyyy',
-                            ).format(_controller.date),
-                            decoration: const InputDecoration(
-                              labelText: 'Ngày nhập',
-                              suffixIcon: Icon(
-                                Icons.calendar_today_outlined,
-                                size: 19,
+                        _fields(
+                          [
+                            DirectoryPicker(
+                              directory: _directory,
+                              kind: DirectoryKind.partner,
+                              fieldKey: 'receipt-partner',
+                              requiredSelection: false,
+                              initialName: _controller.partner,
+                              selectedId: _controller.partnerId,
+                              onSelected: (entry) => _controller.selectPartner(
+                                entry.id,
+                                entry.name,
                               ),
+                              onTextChanged: _controller.changePartner,
                             ),
-                            onTap: _selectDate,
-                          ),
-                          DirectoryPicker(
-                            directory: _directory,
-                            kind: DirectoryKind.carrier,
-                            fieldKey: 'receipt-carrier',
-                            requiredSelection: false,
-                            initialName: _controller.carrier,
-                            selectedId: _controller.carrierId,
-                            onSelected: (entry) =>
-                                _controller.selectCarrier(entry.id, entry.name),
-                            onTextChanged: _controller.changeCarrier,
-                          ),
-                          TextFormField(
-                            initialValue: _controller.notes,
-                            decoration: const InputDecoration(
-                              labelText: 'Ghi chú',
+                            DirectoryPicker(
+                              directory: _directory,
+                              kind: DirectoryKind.carrier,
+                              fieldKey: 'receipt-carrier',
+                              requiredSelection: false,
+                              initialName: _controller.carrier,
+                              selectedId: _controller.carrierId,
+                              onSelected: (entry) => _controller.selectCarrier(
+                                entry.id,
+                                entry.name,
+                              ),
+                              onTextChanged: _controller.changeCarrier,
                             ),
-                            onChanged: (value) => _controller.notes = value,
-                          ),
-                        ]),
+                            TextFormField(
+                              key: ValueKey(_controller.date),
+                              readOnly: true,
+                              initialValue: DateFormat(
+                                'dd/MM/yyyy',
+                              ).format(_controller.date),
+                              decoration: const InputDecoration(
+                                labelText: 'Ngày nhập',
+                                suffixIcon: Icon(
+                                  Icons.calendar_today_outlined,
+                                  size: 19,
+                                ),
+                              ),
+                              onTap: _selectDate,
+                            ),
+                            TextFormField(
+                              initialValue: _controller.notes,
+                              decoration: const InputDecoration(
+                                labelText: 'Ghi chú',
+                              ),
+                              onChanged: (value) => _controller.notes = value,
+                            ),
+                          ],
+                          columnSpans: const {0: 2, 1: 2},
+                        ),
                       ])
                     else if (!_controller.isBatchConfirmed)
                       _section('Thông tin lô nhập', [
@@ -471,8 +480,12 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
   Widget _section(String title, List<Widget> children) =>
       FormSection(title: title, children: children);
 
-  Widget _fields(List<Widget> fields) =>
-      ResponsiveFormFields(fields: fields, compact: true);
+  Widget _fields(List<Widget> fields, {Map<int, int> columnSpans = const {}}) =>
+      ResponsiveFormFields(
+        fields: fields,
+        compact: true,
+        columnSpans: columnSpans,
+      );
 
   Widget _line(ReceiptLineDraft line, int index) => Container(
     key: ValueKey('receipt-line-${line.id}'),
@@ -608,6 +621,13 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
               decoration: const InputDecoration(labelText: 'Biển số'),
               onChanged: (value) =>
                   _controller.updateLine(line, (draft) => draft.plate = value),
+            ),
+            TextFormField(
+              key: ValueKey('line-color-${line.id}'),
+              initialValue: line.color,
+              decoration: const InputDecoration(labelText: 'Màu sơn'),
+              onChanged: (value) =>
+                  _controller.updateLine(line, (draft) => draft.color = value),
             ),
           ],
         ]),

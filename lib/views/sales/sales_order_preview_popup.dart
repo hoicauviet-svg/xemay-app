@@ -15,11 +15,13 @@ class SalesOrderPreviewPopup extends StatefulWidget {
     this.buildPdf,
     this.buildContractPdf,
     this.printDocument,
+    this.initialTab = 0,
   });
   final Future<Uint8List> Function(SalesInvoiceData)? buildPdf;
   final Future<Uint8List> Function(SalesInvoiceData)? buildContractPdf;
   final Future<void> Function(Uint8List bytes, String name)? printDocument;
   final SalesInvoiceData data;
+  final int initialTab;
   @override
   State<SalesOrderPreviewPopup> createState() => _SalesOrderPreviewPopupState();
 }
@@ -35,8 +37,10 @@ class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    final tab = widget.initialTab == 1 ? 1 : 0;
+    _tabs = TabController(length: 2, vsync: this, initialIndex: tab);
     _invoice = _buildInvoice();
+    if (tab == 1) _contract = _buildContract();
   }
 
   @override

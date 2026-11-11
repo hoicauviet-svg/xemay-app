@@ -278,7 +278,13 @@ class _ServiceTabState extends State<ServiceTab>
                     itemBuilder: (context, i) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       title: Text(rows[i].name),
-                      subtitle: Text(rows[i].description),
+                      subtitle: Text(
+                        [
+                          if (rows[i].description.trim().isNotEmpty)
+                            rows[i].description,
+                          'Giá vốn: ${money(rows[i].cost)}',
+                        ].join('\n'),
+                      ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -303,15 +309,17 @@ class _ServiceTabState extends State<ServiceTab>
               DataCell(const Text('Tổng giá niêm yết')),
               DataCell.empty,
               DataCell(Text(money(_report.totals['Giá tiền']))),
+              DataCell(Text(money(_report.totals['Giá vốn']))),
               DataCell.empty,
             ],
           ),
           fitWidth: true,
-          columnWidths: const [240, 400, 160, 160],
+          columnWidths: const [220, 320, 140, 140, 160],
           columns: const [
             DataColumn(label: Text('TÊN DỊCH VỤ')),
             DataColumn(label: Text('MÔ TẢ')),
             DataColumn(label: Text('GIÁ TIỀN')),
+            DataColumn(label: Text('GIÁ VỐN')),
             DataColumn(label: Text('')),
           ],
           rowCount: rows.length,
@@ -326,6 +334,7 @@ class _ServiceTabState extends State<ServiceTab>
                   ),
                 ),
                 DataCell(Text(money(item.price))),
+                DataCell(Text(money(item.cost))),
                 DataCell(_actions(item)),
               ],
             );

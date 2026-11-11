@@ -24,6 +24,7 @@ class ProductListReport {
             ReportColumn('Số khung'),
             ReportColumn('Số máy'),
             ReportColumn('Biển số'),
+            ReportColumn('Màu sơn'),
             ReportColumn('Giá nhập', money: true),
             ReportColumn('Chi phí', money: true),
             ReportColumn('Giá bán', money: true),
@@ -46,6 +47,7 @@ class ProductListReport {
             r['SoKhung'],
             r['SoMay'],
             r['BienSo'],
+            r['MauSon'],
             r['GiaNhap'],
             r['TongChiPhi'] ?? 0,
             r['GiaBan'],
@@ -83,11 +85,15 @@ class ProductListReport {
       ReportColumn('Tên dịch vụ'),
       ReportColumn('Mô tả', width: 300),
       ReportColumn('Giá tiền', money: true),
+      ReportColumn('Giá vốn', money: true),
     ],
     rows: [
-      for (final r in rows) [r.name, r.description, r.price],
+      for (final r in rows) [r.name, r.description, r.price, r.cost],
     ],
-    totals: {'Giá tiền': _sum(rows.map((r) => r.price))},
+    totals: {
+      'Giá tiền': _sum(rows.map((r) => r.price)),
+      'Giá vốn': _sum(rows.map((r) => r.cost)),
+    },
     notes: [
       'Tổng giá niêm yết của các dịch vụ đang hiển thị.${search.trim().isEmpty ? '' : ' Tìm kiếm: ${search.trim()}'}',
     ],

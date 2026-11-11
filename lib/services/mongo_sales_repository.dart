@@ -399,7 +399,13 @@ class MongoSalesRepository implements SalesRepository {
       purchaseCosts = <num?>[];
       for (final line in draft.lines) {
         if (line.kind == 'dich_vu') {
-          purchaseCosts.add(0);
+          final service = line.serviceId == null
+              ? null
+              : await _db.collection('DichVu').findOne({'_id': line.serviceId});
+          final value = service?['GiaVon'];
+          purchaseCosts.add(
+            value is num && value.isFinite && value >= 0 ? value : 0,
+          );
           continue;
         }
         final source = await _db
@@ -449,13 +455,17 @@ class MongoSalesRepository implements SalesRepository {
         'IdHoaDon': invoice,
         ...line.toMap(),
         'DongSo': index + 1,
-        // Service cost is zero even when resuming an older journal with null costs.
-        'GiaNhap': line.kind == 'dich_vu' ? 0 : purchaseCosts[index],
+        // A missing service cost stays zero, including an older journal entry.
+        'GiaNhap': line.kind == 'dich_vu'
+            ? (purchaseCosts[index] is num && (purchaseCosts[index] as num) >= 0
+                  ? purchaseCosts[index]
+                  : 0)
+            : purchaseCosts[index],
         'NguonGiaNhap': line.kind == 'phu_tung'
             ? 'TonKhoPhuTung.GiaVonThamKhao'
             : line.kind == 'xe'
             ? 'Xe.GiaNhap'
-            : 'dich_vu',
+            : 'DichVu.GiaVon',
         'ThanhTien': line.total,
         'TrangThaiGia': 'xac_nhan',
         'PhienBanBanHang': 3,

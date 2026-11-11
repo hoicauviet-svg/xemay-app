@@ -489,6 +489,7 @@ class _SalesTabState extends State<SalesTab> {
                   'Số khung': item.product['SoKhung'],
                   'Số máy': item.product['SoMay'],
                   'Biển số': item.product['BienSo'],
+                  'Màu sơn': item.product['MauSon'],
                 }.entries)
                   Tooltip(
                     message: '${entry.key}: ${entry.value ?? '—'}',
@@ -672,6 +673,7 @@ class _SalesTabState extends State<SalesTab> {
                   'Số khung': item.product['SoKhung'],
                   'Số máy': item.product['SoMay'],
                   'Biển số': item.product['BienSo'],
+                  'Màu sơn': item.product['MauSon'],
                 }.entries)
                   Text(
                     '${e.key}: ${e.value == null || e.value.toString().trim().isEmpty ? '—' : e.value}',

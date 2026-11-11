@@ -300,6 +300,7 @@ void main() {
       expect(details, {
         'IdXe': 8,
         'BienSo': '21A-001',
+        'MauSon': '',
         'GhiChu': 'Xe đã qua sử dụng',
       });
       final parts = GoodsReceiptController(ReceiptProductType.part);

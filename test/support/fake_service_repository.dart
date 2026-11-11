@@ -28,6 +28,7 @@ class FakeServiceRepository implements ServiceRepository {
       name: draft.name.trim(),
       description: draft.description.trim(),
       price: draft.parsedPrice!,
+      cost: draft.parsedCost ?? 0,
     );
     items.add(item);
     return item;
@@ -40,6 +41,7 @@ class FakeServiceRepository implements ServiceRepository {
         name: draft.name,
         description: draft.description,
         price: draft.parsedPrice!,
+        cost: draft.parsedCost ?? 0,
       );
   @override
   Future<void> delete(String id) async {}

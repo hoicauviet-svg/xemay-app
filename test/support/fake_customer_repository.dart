@@ -94,7 +94,7 @@ class FakeCustomerRepository implements CustomerRepository {
         'Không thể xóa khách hàng đã có giao dịch hoặc công nợ.',
       );
     }
-    rows.remove(customer);
+    rows.removeWhere((row) => row['IdKH'] == customer['IdKH']);
   }
 
   @override

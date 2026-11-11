@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:xemay_app/views/orders/order_payment_form.dart';
-import 'package:xemay_app/core/formatters/inventory_formatters.dart';
+import 'package:xemay_app/core/formatters/money_input_formatter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xemay_app/models/orders/order_details.dart';
 
@@ -28,7 +28,7 @@ OrderDetails appointmentOrder({DateTime? start}) => OrderDetails(
 
 void main() {
   testWidgets(
-    'payment date recalculates read-only interest and allows interest only',
+    'payment date fills editable interest and a changed amount is saved',
     (tester) async {
       tester.view.physicalSize = const Size(1400, 1000);
       tester.view.devicePixelRatio = 1;
@@ -37,28 +37,27 @@ void main() {
       final now = DateTime.now();
       final start = OrderDetails.day(now).subtract(const Duration(days: 30));
       int? saved;
+      int? savedInterest;
       DateTime? savedAppointment;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: OrderPaymentForm(
               order: order(start: start),
-              onSave: (date, amount, notes, token, appointment) async {
-                saved = amount;
-                savedAppointment = appointment;
-              },
+              onSave:
+                  (date, amount, interest, notes, token, appointment) async {
+                    saved = amount;
+                    savedInterest = interest;
+                    savedAppointment = appointment;
+                  },
             ),
           ),
         ),
       );
       final field = find.byKey(const ValueKey('order-payment-interest'));
       expect(
-        find.descendant(of: field, matching: find.text(money(20000))),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: field, matching: find.byType(TextField)),
-        findsNothing,
+        tester.widget<TextFormField>(field).controller!.text,
+        groupMoney('20000'),
       );
       await tester.tap(find.byIcon(Icons.calendar_today_outlined));
       await tester.pumpAndSettle();
@@ -70,9 +69,11 @@ void main() {
         start: start,
       ).interestAt(DateTime(now.year, now.month, target));
       expect(
-        find.descendant(of: field, matching: find.text(money(expected))),
-        findsOneWidget,
+        tester.widget<TextFormField>(field).controller!.text,
+        groupMoney('$expected'),
       );
+      await tester.enterText(field, '12345');
+      await tester.pump();
       await tester.tap(find.byIcon(Icons.event_outlined));
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
@@ -80,6 +81,7 @@ void main() {
       await tester.tap(find.text('Lưu thanh toán'));
       await tester.pumpAndSettle();
       expect(saved, 0);
+      expect(savedInterest, 12345);
       expect(
         OrderDetails.day(savedAppointment!),
         OrderDetails.day(DateTime(now.year, now.month, target)),

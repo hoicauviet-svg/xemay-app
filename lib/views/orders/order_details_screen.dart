@@ -5,6 +5,7 @@ import '../maintenance/record_recovery_button.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
 import '../../controllers/order_details_controller.dart';
 import '../../core/formatters/inventory_formatters.dart';
 import '../../models/orders/order_details.dart';
@@ -12,6 +13,7 @@ import '../../models/repositories/order_repository.dart';
 import '../../services/mongo_order_repository.dart';
 import '../widgets/app_top_bar.dart';
 import '../widgets/form_section.dart';
+import '../sales/sales_order_preview_popup.dart';
 import '../widgets/scrollable_data_table.dart';
 import 'order_payment_form.dart';
 
@@ -29,6 +31,8 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
   late final TabController _tabs;
   dynamic _selectedPayment;
   bool _deletePayment = false;
+  bool _editing = false;
+  bool _deleting = false;
   void _choosePayment(dynamic id, bool deleting) {
     setState(() {
       _selectedPayment = id;
@@ -41,7 +45,25 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
     setState(() {
       _selectedPayment = null;
       _deletePayment = false;
+      _editing = false;
     });
+  }
+
+  Future<void> _openPrint(OrderDetails order, int tab) async {
+    try {
+      final data = order.toInvoice(widget.orderId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => SalesOrderPreviewPopup(data: data, initialTab: tab),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa mở được bản in. Vui lòng thử lại.')),
+      );
+    }
   }
 
   @override
@@ -71,6 +93,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
   Future<void> _pay(
     DateTime date,
     int amount,
+    int interest,
     String notes,
     String id,
     DateTime? nextAppointment,
@@ -79,6 +102,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
       widget.orderId,
       date: date,
       amount: amount,
+      interest: interest,
       notes: notes,
       requestId: id,
       nextAppointment: nextAppointment,
@@ -165,10 +189,11 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
     ),
   );
   Widget _information(OrderDetails order) {
-    if (_controller.repository.maintenance != null && true) {
+    final maintenance = _controller.repository.maintenance;
+    if (maintenance != null && (_editing || _selectedPayment != null)) {
       return RecordEditor(
-        key: ValueKey('inline:$_selectedPayment:$_deletePayment'),
-        repository: _controller.repository.maintenance!,
+        key: ValueKey('inline:$_selectedPayment:$_deletePayment:$_editing'),
+        repository: maintenance,
         kind: RecordKind.order,
         id: widget.orderId,
         paymentId: _selectedPayment,
@@ -179,11 +204,63 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
           await _controller.load();
         },
         onDeleted: () => Navigator.pop(context),
-        onCancel: _selectedPayment == null ? null : _clearPayment,
+        onCancel: _clearPayment,
       );
     }
+    return _summary(order);
+  }
 
+  Future<void> _deleteOrder() async {
+    final maintenance = _controller.repository.maintenance;
+    if (maintenance == null || _deleting) return;
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa đơn hàng'),
+        content: Text(
+          'Xóa đơn hàng #${widget.orderId} cùng chi tiết và các phiếu thu liên quan? Sản phẩm sẽ được hoàn lại tồn kho.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await maintenance.delete(
+        RecordKind.order,
+        widget.orderId,
+        requestId: ObjectId().oid,
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error is RecordChangeException
+                  ? error.message
+                  : 'Chưa xóa được đơn hàng. Vui lòng thử lại.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
+  Widget _summary(OrderDetails order) {
     final h = order.header, c = order.customer;
+    final canChange = _controller.repository.maintenance != null;
     final fields = {
       'Mã đơn hàng': '#${widget.orderId}',
       'Ngày bán': _date(h['NgayMua']),
@@ -199,23 +276,69 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
       'Ngày tính lãi': _date(h['NgayTinhLai']),
       'Ghi chú': _value(h['GhiChu']),
     };
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: FormSection(
-        title: null,
-        children: [
-          ResponsiveFormFields(
-            compact: true,
-            fields: [
-              for (final f in fields.entries)
-                InputDecorator(
-                  decoration: InputDecoration(labelText: f.key),
-                  child: SelectableText(f.value),
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            child: FormSection(
+              title: null,
+              children: [
+                ResponsiveFormFields(
+                  compact: true,
+                  fields: [
+                    for (final field in fields.entries)
+                      InputDecorator(
+                        decoration: InputDecoration(labelText: field.key),
+                        child: SelectableText(field.value),
+                      ),
+                  ],
                 ),
-            ],
+              ],
+            ),
           ),
-        ],
-      ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                if (canChange) ...[
+                  OutlinedButton.icon(
+                    onPressed: _deleting
+                        ? null
+                        : () => setState(() => _editing = true),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Sửa'),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('order-delete'),
+                    onPressed: _deleting ? null : _deleteOrder,
+                    icon: const Icon(Icons.delete_outline),
+                    label: Text(_deleting ? 'Đang xóa…' : 'Xóa'),
+                  ),
+                ],
+                OutlinedButton.icon(
+                  key: const ValueKey('print-order-invoice'),
+                  onPressed: _deleting ? null : () => _openPrint(order, 0),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('In hóa đơn'),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('print-order-contract'),
+                  onPressed: _deleting ? null : () => _openPrint(order, 1),
+                  icon: const Icon(Icons.description_outlined),
+                  label: const Text('In hợp đồng'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -242,7 +365,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                       Text(
                         l['IdXe'] == null
                             ? ''
-                            : 'Xe #${l['IdXe']} · Số khung: ${_value(l['SoKhung'])} · Số máy: ${_value(l['SoMay'])} · Biển số: ${_value(l['BienSo'])}',
+                            : 'Xe #${l['IdXe']} · Số khung: ${_value(l['SoKhung'])} · Số máy: ${_value(l['SoMay'])} · Biển số: ${_value(l['BienSo'])} · Màu sơn: ${_value(l['MauSon'])}',
                       ),
                     ),
                     DataCell(Text(_value(l['SoLuong']))),

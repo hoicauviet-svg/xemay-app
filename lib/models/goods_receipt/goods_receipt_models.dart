@@ -39,6 +39,7 @@ class ReceiptLineDraft {
   String frameNumber = '';
   String engineNumber = '';
   String plate = '';
+  String color = '';
   int? brandId;
   String brandName = '';
   String salePrice = '',
@@ -56,6 +57,7 @@ class ReceiptLine {
     required this.frameNumber,
     required this.engineNumber,
     required this.plate,
+    this.color = '',
     this.costs = const [],
     this.brandId,
     this.brandName = '',
@@ -67,7 +69,7 @@ class ReceiptLine {
   });
   final List<ReceiptCost> costs;
   int get totalCosts => costs.fold(0, (sum, c) => sum + c.amount);
-  final String name, frameNumber, engineNumber, plate;
+  final String name, frameNumber, engineNumber, plate, color;
   final int quantity, unitPrice;
   final int? brandId, salePrice, registrationFee;
   final String brandName, vehicleNotes, productCode, unit;
@@ -110,12 +112,18 @@ class ReceiptLine {
         'SoKhung': frameNumber,
         'SoMay': engineNumber,
         'BienSo': plate,
+        'MauSon': color,
         'TienDangKy': registrationFee,
         'TrangThai': null,
       };
     }
     if (type == ReceiptProductType.usedVehicle) {
-      return {'IdXe': vehicleId, 'BienSo': plate, 'GhiChu': vehicleNotes};
+      return {
+        'IdXe': vehicleId,
+        'BienSo': plate,
+        'MauSon': color,
+        'GhiChu': vehicleNotes,
+      };
     }
     throw StateError('Phụ tùng không có chi tiết xe');
   }

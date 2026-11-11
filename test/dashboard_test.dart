@@ -170,6 +170,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Thông tin phiếu nhập'), findsOneWidget);
     expect(find.text('Tên xe'), findsOneWidget);
+    final partner = tester.getSize(
+      find.byKey(const ValueKey('receipt-partner')),
+    );
+    final carrier = tester.getSize(
+      find.byKey(const ValueKey('receipt-carrier')),
+    );
+    final date = tester.getSize(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField && widget.decoration?.labelText == 'Ngày nhập',
+      ),
+    );
+    expect(partner.width, greaterThan(date.width * 1.5));
+    expect(carrier.width, greaterThan(date.width * 1.5));
     await tester.tap(find.byTooltip('Đóng'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Nhập hàng'));

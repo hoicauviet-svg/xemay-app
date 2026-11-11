@@ -457,8 +457,14 @@ class ReportCalculator {
       final seen = <dynamic>{};
       for (final line in details) {
         if (line['LoaiSanPham'] == 'dich_vu' || line['IdDichVu'] != null) {
-          // Services have no purchase price; old missing/null values also cost zero.
-          values.add(0);
+          // A missing service cost stays zero, including old invoices.
+          final recorded = _number(line['GiaNhap']);
+          final quantity = _number(line['SoLuong']);
+          values.add(
+            recorded == null || recorded < 0
+                ? 0
+                : recorded * (quantity == null || quantity <= 0 ? 1 : quantity),
+          );
           continue;
         }
         final quantity = _number(line['SoLuong']);
