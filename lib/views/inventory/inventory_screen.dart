@@ -50,7 +50,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         final wide = bounds.maxWidth >= 1050;
         return Scaffold(
           key: _scaffold,
-          appBar: wide ? null : AppBar(title: const Text('Quản lý cửa hàng')),
+          appBar: wide ? null : AppBar(title: const Text('Xe Máy Toàn Hợp')),
           drawer: wide ? null : Drawer(child: _navigation()),
           body: Row(
             children: [
@@ -128,10 +128,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       color: _green,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
-                      Icons.storefront_outlined,
-                      color: Colors.white,
-                    ),
+                    child: const Icon(Icons.two_wheeler, color: Colors.white),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
@@ -139,16 +136,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'CỬA HÀNG',
+                          'Xe Máy Toàn Hợp',
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
+                            fontSize: 15,
+                            height: 1.2,
                             color: _ink,
                           ),
-                        ),
-                        Text(
-                          'Xe & phụ tùng',
-                          style: TextStyle(color: _muted, fontSize: 12),
                         ),
                       ],
                     ),

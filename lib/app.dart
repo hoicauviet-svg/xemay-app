@@ -47,7 +47,7 @@ class StoreApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Quản lý cửa hàng',
+    title: 'Xe Máy Toàn Hợp',
     debugShowCheckedModeBanner: false,
     locale: const Locale('vi'),
     supportedLocales: const [Locale('vi')],

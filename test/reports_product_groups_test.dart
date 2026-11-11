@@ -573,17 +573,22 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(Tab, 'Dịch vụ'));
+      await t.tap(find.byKey(const ValueKey('sales-group-services')));
       await t.pumpAndSettle();
       expect(find.textContaining('Xe mới A'), findsNothing);
       expect(find.textContaining('Dịch vụ D'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('sales-group-all')));
+      await t.pumpAndSettle();
+      expect(find.textContaining('Xe mới A'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('sales-group-services')));
+      await t.pumpAndSettle();
       await t.tap(find.byKey(const ValueKey('report-export-excel')));
       await t.pumpAndSettle();
       expect(exported?.totals['Tiền hàng'], 10000);
       await t.tap(find.widgetWithText(Tab, 'Nhập hàng'));
       await t.pumpAndSettle();
-      expect(find.widgetWithText(Tab, 'Dịch vụ'), findsNothing);
-      await t.tap(find.widgetWithText(Tab, 'Xe cũ'));
+      expect(find.byKey(const ValueKey('sales-group-services')), findsNothing);
+      await t.tap(find.byKey(const ValueKey('receipts-group-usedVehicles')));
       await t.pumpAndSettle();
       await t.tap(find.byKey(const ValueKey('report-export-excel')));
       await t.pumpAndSettle();

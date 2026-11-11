@@ -61,13 +61,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('sales-profit-summary')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.textContaining('Lợi nhuận đã xác định: 400 đ'),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.textContaining('1 đơn chưa đủ dữ liệu'), findsOneWidget);
+      expect(find.textContaining('1 đơn chưa đủ dữ liệu'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -904,4 +904,133 @@ void main() {
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
   });
+  testWidgets(
+    'Sales revenue columns and cash charts show each share',
+    (t) async {
+      t.view.physicalSize = const Size(1400, 1100);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      final now = DateTime.now();
+      final repo = FakeReportsRepository()
+        ..source = {
+          'HoaDonBan': [
+            {
+              'IdHoaDon': 1,
+              'NgayMua': now,
+              'TongTienHang': 400,
+              'GiamGia': 0,
+              'TongThanhToan': 400,
+            },
+          ],
+          'SoNo': [
+            {'IdHoaDon': 1, 'SoTienDaTra': 400, 'SoTienConNo': 0},
+          ],
+          'Xe': [
+            {'IdXe': 1, 'TinhTrangXe': 'moi', 'GiaNhap': 100, 'TenXe': 'Xe A'},
+          ],
+          'ChiTietHoaDonBan': [
+            {
+              'IdHoaDon': 1,
+              'IdXe': 1,
+              'TenSanPham': 'Xe A',
+              'SoLuong': 1,
+              'DonGia': 300,
+            },
+            {
+              'IdHoaDon': 1,
+              'TenSanPham': 'Rửa xe',
+              'LoaiSanPham': 'dich_vu',
+              'SoLuong': 1,
+              'DonGia': 100,
+            },
+          ],
+          'ThuChiKhac': [
+            {
+              'ThuChiId': 1,
+              'NgayThang': now,
+              'ThuChi': true,
+              'SoTien': 1000,
+              'LyDo': 'Khoản thu A',
+            },
+            {
+              'ThuChiId': 2,
+              'NgayThang': now,
+              'ThuChi': false,
+              'SoTien': 400,
+              'LyDo': 'Khoản chi B',
+            },
+          ],
+        };
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReportsView(initialKind: ReportKind.sales, repository: repo),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      final revenue = find.byKey(const ValueKey('sales-order-chart'));
+      expect(
+        find.descendant(of: revenue, matching: find.text('Doanh thu')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: revenue, matching: find.text('Tổng: 400 đ')),
+        findsOneWidget,
+      );
+      for (final label in ['Xe mới', 'Xe cũ', 'Phụ tùng', 'Dịch vụ']) {
+        expect(
+          find.descendant(of: revenue, matching: find.text(label)),
+          findsOneWidget,
+        );
+      }
+      final chart = t.getRect(revenue);
+      final legend = t.getRect(
+        find.descendant(of: revenue, matching: find.text('Xe mới')),
+      );
+      expect(legend.right, lessThan(chart.center.dx));
+      expect(
+        find.descendant(of: revenue, matching: find.textContaining('%')),
+        findsNothing,
+      );
+      expect(
+        t.getSize(revenue).height,
+        t.getSize(find.byKey(const ValueKey('sales-revenue-pie'))).height,
+      );
+      await t.tap(find.widgetWithText(Tab, 'Thu chi'));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('cash-flow-chart')), findsNothing);
+      expect(find.text('Tổng thu chi'), findsNothing);
+      final split = find.byKey(const ValueKey('cash-split-pie'));
+      final incomePie = find.byKey(const ValueKey('cash-income-pie'));
+      final expensePie = find.byKey(const ValueKey('cash-expense-pie'));
+      expect(split, findsOneWidget);
+      expect(incomePie, findsOneWidget);
+      expect(expensePie, findsOneWidget);
+      expect(t.getTopLeft(split).dx, lessThan(t.getTopLeft(incomePie).dx));
+      expect(t.getTopLeft(incomePie).dx, lessThan(t.getTopLeft(expensePie).dx));
+      expect(t.getSize(split).height, t.getSize(incomePie).height);
+      expect(t.getSize(incomePie).height, t.getSize(expensePie).height);
+      expect(find.textContaining('1.000 đ · 71%'), findsOneWidget);
+      expect(find.textContaining('400 đ · 29%'), findsOneWidget);
+      expect(
+        find.descendant(of: incomePie, matching: find.text('Thu khác')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: expensePie, matching: find.text('Chi khác')),
+        findsOneWidget,
+      );
+      await t.tap(find.byKey(const ValueKey('report-cash-type')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Chi').last);
+      await t.pumpAndSettle();
+      expect(find.text('Khoản thu A'), findsNothing);
+      expect(find.textContaining('1.000 đ · 71%'), findsOneWidget);
+      t.view.physicalSize = const Size(420, 900);
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    },
+  );
 }

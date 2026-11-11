@@ -121,6 +121,8 @@ void main() {
         cloudVersion: FakeDatabaseSettingsRepository.remoteVersion,
         lastSyncAt: DateTime.utc(2026, 11, 10),
         syncReminderStartedAt: DateTime.utc(2026, 10, 20),
+        backupDirectory: '/tmp/sao-luu',
+        lastBackupAt: DateTime.utc(2026, 11, 6),
         syncHistory: [
           SyncHistoryEntry(
             at: DateTime.utc(2026, 11, 10),
@@ -139,6 +141,8 @@ void main() {
       expect((await repo.load()).databaseVersion?.version, 'local-hash');
       expect((await repo.load()).cloudVersion?.version, 'cloud-hash');
       expect((await repo.load()).lastSyncAt, settings.lastSyncAt);
+      expect((await repo.load()).backupDirectory, '/tmp/sao-luu');
+      expect((await repo.load()).lastBackupAt, settings.lastBackupAt);
       expect((await repo.load()).syncHistory.single.success, isTrue);
       expect((await repo.load()).syncHistory.single.rows, 42);
       expect(DatabaseConfig.mongoUri, settings.mongoUri);
@@ -160,6 +164,23 @@ void main() {
       await t.pumpAndSettle();
       expect(find.widgetWithText(Tab, 'MongoDB'), findsOneWidget);
       expect(find.widgetWithText(Tab, 'SQL Server'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings-backup-mongo')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('settings-restore-mongo')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('settings-backup-directory')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('settings-open-backup-directory')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('5 ngày'), findsOneWidget);
       expect(find.textContaining('Chưa phát hiện MongoDB'), findsOneWidget);
       await t.tap(find.text('Hướng dẫn cài MongoDB'));
       await t.pumpAndSettle();
@@ -187,6 +208,54 @@ void main() {
       await t.pumpAndSettle();
       expect(repo.saves, 1);
       expect(t.takeException(), isNull);
+    },
+  );
+  test(
+    'backup uses the saved database and a sale in progress blocks restore',
+    () async {
+      final repo = FakeDatabaseSettingsRepository();
+      final controller = DatabaseSettingsController(repo);
+      addTearDown(controller.dispose);
+      await controller.load();
+      await controller.backupNow();
+      expect(repo.backups, 0);
+      expect(controller.errorFor(SettingsSection.mongo), contains('thư mục'));
+      await controller.saveBackupDirectory('/tmp/sao-luu');
+      expect(repo.settings.backupDirectory, '/tmp/sao-luu');
+      expect(repo.backups, 0);
+      expect(repo.settings.lastBackupAt, isNull);
+      expect(
+        controller.messageFor(SettingsSection.mongo),
+        'Đã lưu thư mục sao lưu.',
+      );
+      await controller.openBackupDirectory();
+      expect(repo.openedBackupDirectory, '/tmp/sao-luu');
+      await controller.backupNow();
+      expect(repo.backups, 1);
+      expect(repo.backupDirectory, '/tmp/sao-luu');
+      expect(repo.settings.lastBackupAt, isNotNull);
+      expect(
+        controller.messageFor(SettingsSection.mongo),
+        contains('Đã sao lưu'),
+      );
+      CartController.shared.add({
+        'IdXe': 123,
+        'IdSanPham': 1,
+        'SoLuongTon': 1,
+        'GiaBan': 100,
+        'LoaiSanPham': 'xe',
+      }, vehicle: true);
+      await controller.restoreMongo('/tmp/sao-luu.zip');
+      expect(repo.restores, 0);
+      expect(controller.errorFor(SettingsSection.mongo), contains('khôi phục'));
+      CartController.shared.clear();
+      await controller.restoreMongo('/tmp/sao-luu.zip');
+      expect(repo.restores, 1);
+      expect(repo.restoreUri, repo.settings.mongoUri);
+      expect(
+        controller.messageFor(SettingsSection.mongo),
+        contains('Đã khôi phục'),
+      );
     },
   );
   test(

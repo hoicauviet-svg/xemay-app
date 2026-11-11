@@ -10,9 +10,9 @@ class StockValueChart extends StatelessWidget {
 
   static const labels = ['Xe mới', 'Xe cũ', 'Phụ tùng'];
   static const colors = [
-    Color(0xFF176455),
-    Color(0xFF3E8F78),
-    Color(0xFFC4A35A),
+    Color(0xFF0E8A6A),
+    Color(0xFFE36A1E),
+    Color(0xFF2F6FE4),
   ];
 
   @override

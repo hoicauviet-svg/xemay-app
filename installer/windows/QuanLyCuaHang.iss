@@ -1,9 +1,9 @@
-; Inno Setup 6 script. Version is passed by tool/build_windows_installer.ps1.
+﻿; Inno Setup 6 script. Version is passed by tool/build_windows_installer.ps1.
 #ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
 
-#define AppName "Quan Ly Cua Hang"
+#define AppName "Xe Máy Toàn Hợp"
 #define AppExeName "xemay_app.exe"
 #define AppPublisher "vn.cuahang"
 
@@ -38,4 +38,4 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Mo Quan Ly Cua Hang"; Flags: nowait postinstall
+Filename: "{app}\{#AppExeName}"; Description: "Mở Xe Máy Toàn Hợp"; Flags: nowait postinstall

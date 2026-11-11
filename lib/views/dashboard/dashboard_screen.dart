@@ -3,6 +3,7 @@ import '../../core/config/database_config.dart';
 import '../settings/app_update_panel.dart';
 import '../settings/settings_tab.dart';
 import '../settings/cloud_sync_reminder_dialog.dart';
+import '../../services/mongo_backup_schedule.dart';
 import '../../services/native_database_settings_repository.dart';
 import '../../models/repositories/opening_debt_repository.dart';
 import '../../models/repositories/reports_repository.dart';
@@ -105,16 +106,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _startupNotices() async {
+    final repository =
+        widget.databaseSettingsRepositoryFactory?.call() ??
+        NativeDatabaseSettingsRepository();
     await checkForCloudSyncReminder(
       context,
-      repository:
-          widget.databaseSettingsRepositoryFactory?.call() ??
-          NativeDatabaseSettingsRepository(),
+      repository: repository,
       onOpenSettings: () {
         setState(() => _initialSettingsTab = 2);
         _selectGroup(DashboardGroup.settings);
       },
     );
+    try {
+      await MongoBackupSchedule(repository).runIfDue();
+    } catch (_) {
+      // A missed backup must not stop the shop from opening.
+    }
     if (mounted) await checkForUpdateOnLaunch(context);
   }
 
@@ -274,10 +281,7 @@ class _Sidebar extends StatelessWidget {
                       color: _green,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
-                      Icons.storefront_outlined,
-                      color: Colors.white,
-                    ),
+                    child: const Icon(Icons.two_wheeler, color: Colors.white),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
@@ -285,16 +289,13 @@ class _Sidebar extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'CỬA HÀNG',
+                          'Xe Máy Toàn Hợp',
                           style: TextStyle(
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
+                            fontSize: 15,
+                            height: 1.2,
                             color: _ink,
                           ),
-                        ),
-                        Text(
-                          'Xe & phụ tùng',
-                          style: TextStyle(color: _muted, fontSize: 12),
                         ),
                       ],
                     ),

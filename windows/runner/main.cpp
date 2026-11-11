@@ -27,7 +27,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1360, 860);
-  if (!window.Create(L"Quan Ly Cua Hang", origin, size)) {
+  if (!window.Create(L"Xe M\u00E1y To\u00E0n H\u1EE3p", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

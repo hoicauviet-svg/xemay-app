@@ -4,8 +4,9 @@
 // future. If not, the values below would default to using the project name when this becomes a
 // 'flutter create' template.
 
-// The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = Quan Ly Cua Hang
+// ASCII bundle name. A name with Vietnamese diacritics makes codesign fail
+// because macOS stores the path in a different Unicode form than the signed binary.
+PRODUCT_NAME = Xe May Toan Hop
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = vn.cuahang.xemayApp

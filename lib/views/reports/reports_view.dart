@@ -1,4 +1,5 @@
 import 'reports_overview_view.dart';
+import 'cash_charts.dart';
 import 'customer_debt_chart.dart';
 import 'sales_charts.dart';
 import 'stock_chart.dart';
@@ -163,41 +164,12 @@ class _ReportsViewState extends State<ReportsView>
               _sectionHeader(tab, kind),
             if (!_sectionReport(kind))
               Padding(padding: const EdgeInsets.all(16), child: _toolbar(kind)),
-            if (kind == ReportKind.sales || kind == ReportKind.receipts)
-              _productTabs(kind),
             Expanded(child: _body(kind)),
           ],
         ),
       );
     },
   );
-  Widget _productTabs(ReportKind kind) {
-    final groups = [
-      ReportProductGroup.all,
-      ReportProductGroup.newVehicles,
-      ReportProductGroup.usedVehicles,
-      ReportProductGroup.parts,
-      if (kind == ReportKind.sales) ReportProductGroup.services,
-    ];
-    final current = kind == ReportKind.sales
-        ? _controller.salesGroup
-        : _controller.receiptsGroup;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: DefaultTabController(
-        key: ValueKey('report-product-tabs-${kind.name}'),
-        length: groups.length,
-        initialIndex: groups.indexOf(current),
-        child: TabBar(
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          onTap: (index) => _controller.setProductGroup(kind, groups[index]),
-          tabs: [for (final group in groups) Tab(text: group.label)],
-        ),
-      ),
-    );
-  }
-
   bool _sectionReport(ReportKind kind) => [
     ReportKind.debts,
     ReportKind.customerDebt,
@@ -605,9 +577,11 @@ class _ReportsViewState extends State<ReportsView>
         children: [
           if (kind == ReportKind.sales) ...[
             SalesCharts(
-              orders:
-                  _controller.data?.sections[ReportKind.sales]?.rows ??
-                  const [],
+              byGroup: {
+                for (final group in SalesCharts.groups)
+                  group:
+                      _controller.data?.salesByGroup[group]?.rows ?? const [],
+              },
               revenue: {
                 for (final group in SalesCharts.groups)
                   group: _controller
@@ -615,7 +589,54 @@ class _ReportsViewState extends State<ReportsView>
                       ?.salesByGroup[group]
                       ?.totals['Doanh thu'],
               },
+              selected: _controller.salesGroup == ReportProductGroup.all
+                  ? null
+                  : _controller.salesGroup,
+              onSelected: (group) => _controller.setProductGroup(
+                ReportKind.sales,
+                group ?? ReportProductGroup.all,
+              ),
             ),
+          ],
+          if (kind == ReportKind.receipts) ...[
+            GroupShareChart(
+              chartKey: const ValueKey('receipts-group-pie'),
+              title: 'Tiền nhập theo nhóm',
+              emptyMessage: 'Chưa có tiền nhập.',
+              keyPrefix: 'receipts-group',
+              groups: const [
+                ReportProductGroup.newVehicles,
+                ReportProductGroup.usedVehicles,
+                ReportProductGroup.parts,
+              ],
+              values: {
+                for (final group in const [
+                  ReportProductGroup.newVehicles,
+                  ReportProductGroup.usedVehicles,
+                  ReportProductGroup.parts,
+                ])
+                  group: _controller
+                      .data
+                      ?.receiptsByGroup[group]
+                      ?.totals['Tiền nhập'],
+              },
+              selected: _controller.receiptsGroup == ReportProductGroup.all
+                  ? null
+                  : _controller.receiptsGroup,
+              onSelected: (group) => _controller.setProductGroup(
+                ReportKind.receipts,
+                group ?? ReportProductGroup.all,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (kind == ReportKind.cash) ...[
+            CashCharts(
+              rows: _controller.data?.sections[ReportKind.cash]?.rows ?? const [],
+              income: _controller.data?.sections[ReportKind.cash]?.totals['Thu'],
+              expense: _controller.data?.sections[ReportKind.cash]?.totals['Chi'],
+            ),
+            const SizedBox(height: 12),
           ],
           if (kind == ReportKind.stock) ...[
             StockValueChart(rows: rows),
@@ -630,15 +651,6 @@ class _ReportsViewState extends State<ReportsView>
             ),
             const SizedBox(height: 12),
           ],
-          if (kind == ReportKind.sales)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                '${section.totals['Lợi nhuận'] == null ? 'Lợi nhuận đã xác định' : 'Lợi nhuận'}: ${section.totals['Lợi nhuận'] == null && section.totals['Lợi nhuận đã xác định'] == null ? 'Chưa đủ dữ liệu giá vốn / chi phí' : money(section.totals['Lợi nhuận'] ?? section.totals['Lợi nhuận đã xác định'])}${(section.totals['Đơn thiếu lợi nhuận'] ?? 0) > 0 ? ' · ${section.totals['Đơn thiếu lợi nhuận']} đơn chưa đủ dữ liệu' : ''}',
-                key: const ValueKey('sales-profit-summary'),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
           Expanded(
             child: LayoutBuilder(
               builder: (context, bounds) {

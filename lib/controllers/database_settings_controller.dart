@@ -325,6 +325,90 @@ class DatabaseSettingsController extends ChangeNotifier {
         '${upload ? 'Đã đồng bộ lên cloud' : 'Đã tải về và sử dụng dữ liệu trên máy'}: ${result.collections} bảng, ${result.rows} dòng. Bản dữ liệu trước vẫn được giữ lại.';
   });
 
+  void _note(String line) {
+    if (_disposed) return;
+    progress.add(line);
+    if (progress.length > 150) progress.removeAt(0);
+    notifyListeners();
+  }
+
+  void _checkRestore() {
+    if (CartController.shared.count > 0 || CartController.shared.locked) {
+      throw const DatabaseSettingsException(
+        'Hãy hoàn tất hoặc bỏ đơn bán hàng đang nhập trước khi khôi phục dữ liệu.',
+      );
+    }
+  }
+
+  Future<MongoBackupResult> _writeBackup(DatabaseSettings current) async {
+    final time = _now();
+    final result = await repository.backupMongo(
+      mongoUri: current.mongoUri,
+      directory: current.backupDirectory.trim(),
+      now: time,
+      progress: _note,
+    );
+    final stamped = current.copyWith(lastBackupAt: time);
+    await repository.save(stamped);
+    settings = stamped;
+    return result;
+  }
+
+  Future<void> saveBackupDirectory(String directory) => _perform(
+    SettingsSection.mongo,
+    () async {
+      final path = directory.trim();
+      if (path.isEmpty) {
+        throw const DatabaseSettingsException('Chọn thư mục lưu bản sao lưu.');
+      }
+      final next = settings.copyWith(backupDirectory: path);
+      await repository.save(next);
+      settings = next;
+      message = 'Đã lưu thư mục sao lưu.';
+    },
+  );
+
+  Future<void> openBackupDirectory() =>
+      _perform(SettingsSection.mongo, () async {
+        final path = settings.backupDirectory.trim();
+        if (path.isEmpty) {
+          throw const DatabaseSettingsException(
+            'Chọn thư mục lưu bản sao lưu trước.',
+          );
+        }
+        await repository.openBackupDirectory(path);
+      });
+
+  Future<void> backupNow() => _perform(SettingsSection.mongo, () async {
+    if (settings.backupDirectory.trim().isEmpty) {
+      throw const DatabaseSettingsException(
+        'Chọn thư mục lưu bản sao lưu trước.',
+      );
+    }
+    _validateMongo(settings.mongoUri);
+    progress.clear();
+    final result = await _writeBackup(settings);
+    message = 'Đã sao lưu ${result.collections} bảng, ${result.rows} dòng.';
+  });
+
+  Future<void> restoreMongo(
+    String path,
+  ) => _perform(SettingsSection.mongo, () async {
+    if (path.trim().isEmpty) {
+      throw const DatabaseSettingsException('Chọn file sao lưu để khôi phục.');
+    }
+    _validateMongo(settings.mongoUri);
+    _checkRestore();
+    progress.clear();
+    final result = await repository.restoreMongo(
+      mongoUri: settings.mongoUri,
+      path: path,
+      progress: _note,
+    );
+    message =
+        'Đã khôi phục ${result.collections} bảng, ${result.rows} dòng. Mở lại các màn hình để xem dữ liệu mới.';
+  });
+
   Future<void> openInstallation() =>
       _perform(SettingsSection.mongo, repository.openMongoInstallation);
   @override

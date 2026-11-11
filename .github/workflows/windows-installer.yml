@@ -57,7 +57,7 @@ jobs:
           } else {
             gh release create $tag $setup "build/installer/latest.json" `
               --target $env:GITHUB_SHA --latest `
-              --title "Quan Ly Cua Hang $version+$build" `
+              --title "Xe Máy Toàn Hợp $version+$build" `
               --notes "Ban cai Windows $version+$build. Ung dung tai latest.json va file cai tu ban phat hanh nay."
           }
           if ($LASTEXITCODE -ne 0) { throw 'Dang ban phat hanh GitHub that bai.' }

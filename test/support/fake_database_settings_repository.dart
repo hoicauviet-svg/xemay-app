@@ -10,7 +10,11 @@ class FakeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     installed: false,
     connected: false,
   );
-  int saves = 0, clones = 0;
+  int saves = 0, clones = 0, backups = 0, restores = 0;
+  String? backupDirectory, restorePath, backupUri, restoreUri;
+  String? openedBackupDirectory;
+  bool failBackup = false;
+  DateTime? backupNow;
   bool installOpened = false, failSql = false;
   @override
   Future<DatabaseSettings> load() async => settings;
@@ -103,6 +107,42 @@ class FakeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       rows: 42,
       collections: 3,
     );
+  }
+
+  @override
+  Future<MongoBackupResult> backupMongo({
+    required String mongoUri,
+    required String directory,
+    DateTime? now,
+    void Function(String)? progress,
+  }) async {
+    backups++;
+    backupUri = mongoUri;
+    backupDirectory = directory;
+    backupNow = now;
+    if (failBackup) {
+      throw const DatabaseSettingsException('Chưa sao lưu được dữ liệu.');
+    }
+    progress?.call('Đang sao lưu Xe');
+    return const MongoBackupResult(database: 'XM', collections: 2, rows: 5);
+  }
+
+  @override
+  Future<MongoBackupResult> restoreMongo({
+    required String mongoUri,
+    required String path,
+    void Function(String)? progress,
+  }) async {
+    restores++;
+    restoreUri = mongoUri;
+    restorePath = path;
+    progress?.call('Đang khôi phục Xe');
+    return const MongoBackupResult(database: 'XM', collections: 2, rows: 5);
+  }
+
+  @override
+  Future<void> openBackupDirectory(String path) async {
+    openedBackupDirectory = path;
   }
 
   @override

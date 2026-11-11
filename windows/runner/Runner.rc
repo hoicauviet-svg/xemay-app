@@ -1,4 +1,4 @@
-// Microsoft Visual C++ generated resource script.
+﻿// Microsoft Visual C++ generated resource script.
 //
 #pragma code_page(65001)
 #include "resource.h"
@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "vn.cuahang" "\0"
-            VALUE "FileDescription", "Quan Ly Cua Hang" "\0"
+            VALUE "FileDescription", "Xe Máy Toàn Hợp" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "xemay_app" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 vn.cuahang. All rights reserved." "\0"
             VALUE "OriginalFilename", "xemay_app.exe" "\0"
-            VALUE "ProductName", "Quan Ly Cua Hang" "\0"
+            VALUE "ProductName", "Xe Máy Toàn Hợp" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

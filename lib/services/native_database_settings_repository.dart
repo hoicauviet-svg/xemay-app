@@ -1,4 +1,5 @@
 import 'mongo_connection_uri.dart';
+import 'mongo_data_backup.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -58,6 +59,8 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       syncReminderStartedAt: DateTime.tryParse(
         json['syncReminderStartedAt'] as String? ?? '',
       ),
+      backupDirectory: json['backupDirectory'] as String? ?? '',
+      lastBackupAt: DateTime.tryParse(json['lastBackupAt'] as String? ?? ''),
       syncHistory: (json['syncHistory'] as List? ?? [])
           .map(
             (entry) => SyncHistoryEntry.fromJson(
@@ -387,6 +390,55 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
             )
           : null,
     );
+  }
+
+  @override
+  Future<MongoBackupResult> backupMongo({
+    required String mongoUri,
+    required String directory,
+    DateTime? now,
+    void Function(String)? progress,
+  }) => MongoDataBackup.exportToDirectory(
+    mongoUri: mongoUri,
+    directory: directory,
+    now: now,
+    progress: progress,
+  );
+
+  @override
+  Future<MongoBackupResult> restoreMongo({
+    required String mongoUri,
+    required String path,
+    void Function(String)? progress,
+  }) => MongoDataBackup.importFromFile(
+    mongoUri: mongoUri,
+    path: path,
+    progress: progress,
+  );
+
+  @override
+  Future<void> openBackupDirectory(String path) async {
+    final directory = Directory(path);
+    if (!await directory.exists()) {
+      throw const DatabaseSettingsException(
+        'Không tìm thấy thư mục lưu bản sao lưu.',
+      );
+    }
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer', [directory.path]);
+        return;
+      }
+      final command = Platform.isMacOS ? 'open' : 'xdg-open';
+      final result = await Process.run(command, [directory.path]);
+      if (result.exitCode != 0) {
+        throw const DatabaseSettingsException('Không mở được thư mục sao lưu.');
+      }
+    } on DatabaseSettingsException {
+      rethrow;
+    } catch (_) {
+      throw const DatabaseSettingsException('Không mở được thư mục sao lưu.');
+    }
   }
 
   @override

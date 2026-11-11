@@ -23,5 +23,17 @@ abstract class DatabaseSettingsRepository {
     required String conflictPolicy,
     required void Function(String) progress,
   });
+  Future<MongoBackupResult> backupMongo({
+    required String mongoUri,
+    required String directory,
+    DateTime? now,
+    void Function(String)? progress,
+  });
+  Future<MongoBackupResult> restoreMongo({
+    required String mongoUri,
+    required String path,
+    void Function(String)? progress,
+  });
+  Future<void> openBackupDirectory(String path);
   Future<void> openMongoInstallation();
 }

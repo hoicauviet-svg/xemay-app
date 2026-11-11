@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/settings/database_settings.dart';
@@ -7,6 +8,12 @@ import '../../models/repositories/database_settings_repository.dart';
 import '../../services/native_database_settings_repository.dart';
 import '../widgets/form_section.dart';
 import 'app_update_panel.dart';
+
+const _backupType = XTypeGroup(
+  label: 'Bản sao lưu',
+  extensions: ['zip'],
+  uniformTypeIdentifiers: ['public.zip-archive'],
+);
 
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key, this.repository, this.initialTab = 0});
@@ -20,10 +27,11 @@ class _SettingsTabState extends State<SettingsTab> {
   late final DatabaseSettingsController _controller;
   final _mongo = TextEditingController(), _sql = TextEditingController();
   final _cloud = TextEditingController();
+  final _backupDirectory = TextEditingController();
   bool _showCloud = false;
   String? _loadedCloud;
   bool _showMongo = false, _showSql = false;
-  String? _loadedMongo, _loadedSql;
+  String? _loadedMongo, _loadedSql, _loadedBackupDirectory;
   @override
   void initState() {
     super.initState();
@@ -50,6 +58,10 @@ class _SettingsTabState extends State<SettingsTab> {
         _sql.text = _controller.settings.sqlConnection;
         _loadedSql = _sql.text;
       }
+      if (_loadedBackupDirectory != _controller.settings.backupDirectory) {
+        _backupDirectory.text = _controller.settings.backupDirectory;
+        _loadedBackupDirectory = _backupDirectory.text;
+      }
     }
     setState(() {});
   }
@@ -61,6 +73,7 @@ class _SettingsTabState extends State<SettingsTab> {
     _mongo.dispose();
     _sql.dispose();
     _cloud.dispose();
+    _backupDirectory.dispose();
     super.dispose();
   }
 
@@ -159,6 +172,15 @@ class _SettingsTabState extends State<SettingsTab> {
         title: null,
         children: [
           _messages(SettingsSection.mongo),
+          if (_controller.busyFor(SettingsSection.mongo) &&
+              _controller.progressFor(SettingsSection.mongo).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _controller.progressFor(SettingsSection.mongo).last,
+                style: const TextStyle(color: Color(0xFF6E7D83)),
+              ),
+            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -210,9 +232,117 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
             ],
           ),
+          const SizedBox(height: 20),
+          const Text(
+            'Chọn thư mục để lưu bản sao lưu. Ứng dụng tự sao lưu sau mỗi 5 ngày và xóa bản cũ khi có bản mới.',
+            style: TextStyle(color: Color(0xFF6E7D83)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('settings-backup-directory'),
+            controller: _backupDirectory,
+            readOnly: true,
+            enabled: !_controller.busy,
+            decoration: const InputDecoration(
+              labelText: 'Thư mục sao lưu',
+              hintText: 'Chưa chọn thư mục',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _lastBackupLabel(),
+            style: const TextStyle(color: Color(0xFF6E7D83)),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('settings-choose-backup-directory'),
+                onPressed: _controller.busy ? null : _chooseBackupDirectory,
+                icon: const Icon(Icons.folder_open_outlined),
+                label: const Text('Chọn thư mục'),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('settings-open-backup-directory'),
+                onPressed:
+                    _controller.busy ||
+                        _controller.settings.backupDirectory.trim().isEmpty
+                    ? null
+                    : _controller.openBackupDirectory,
+                icon: const Icon(Icons.launch_outlined),
+                label: const Text('Mở thư mục'),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('settings-backup-mongo'),
+                onPressed: _controller.busy ? null : _backup,
+                icon: const Icon(Icons.archive_outlined),
+                label: const Text('Sao lưu dữ liệu'),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('settings-restore-mongo'),
+                onPressed: _controller.busy ? null : _restore,
+                icon: const Icon(Icons.settings_backup_restore_outlined),
+                label: const Text('Khôi phục dữ liệu'),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  String _fileName(String path) {
+    final slash = path.lastIndexOf(RegExp(r'[/\\]'));
+    return slash < 0 ? path : path.substring(slash + 1);
+  }
+
+  String _lastBackupLabel() {
+    final last = _controller.settings.lastBackupAt;
+    if (last == null) return 'Chưa sao lưu.';
+    return 'Lần sao lưu gần nhất: ${DateFormat('dd/MM/yyyy HH:mm').format(last.toLocal())}.';
+  }
+
+  Future<void> _chooseBackupDirectory() async {
+    final current = _controller.settings.backupDirectory.trim();
+    final path = await getDirectoryPath(
+      initialDirectory: current.isEmpty ? null : current,
+      confirmButtonText: 'Chọn thư mục',
+    );
+    if (path == null || !mounted) return;
+    await _controller.saveBackupDirectory(path);
+  }
+
+  Future<void> _backup() => _controller.backupNow();
+
+  Future<void> _restore() async {
+    final directory = _controller.settings.backupDirectory.trim();
+    final file = await openFile(
+      acceptedTypeGroups: const [_backupType],
+      initialDirectory: directory.isEmpty ? null : directory,
+    );
+    if (file == null || !mounted) return;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Khôi phục dữ liệu'),
+        content: Text(
+          'Khôi phục từ ${_fileName(file.path)} sẽ thay toàn bộ dữ liệu MongoDB đang dùng. Dữ liệu hiện tại bị ghi đè.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Khôi phục'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true && mounted) await _controller.restoreMongo(file.path);
   }
 
   Future<void> _syncCloud(bool upload) async {

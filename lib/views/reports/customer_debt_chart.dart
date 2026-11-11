@@ -36,9 +36,9 @@ class CustomerDebtAgingChart extends StatelessWidget {
     CustomerDebtTiming.undated: 'Chưa có ngày hẹn',
   };
   static const _colors = {
-    CustomerDebtTiming.within: Color(0xFF176455),
-    CustomerDebtTiming.overdue: Color(0xFFB44141),
-    CustomerDebtTiming.undated: Color(0xFFC4A35A),
+    CustomerDebtTiming.within: Color(0xFF0E8A6A),
+    CustomerDebtTiming.overdue: Color(0xFFD23B4A),
+    CustomerDebtTiming.undated: Color(0xFFC9A227),
   };
 
   @override

@@ -7,11 +7,13 @@ class DatabaseSettings {
     this.cloudVersion,
     this.lastSyncAt,
     this.syncReminderStartedAt,
+    this.backupDirectory = '',
+    this.lastBackupAt,
     this.syncHistory = const [],
   });
-  final String mongoUri, sqlConnection, cloudUri;
+  final String mongoUri, sqlConnection, cloudUri, backupDirectory;
   final DatabaseVersion? databaseVersion, cloudVersion;
-  final DateTime? lastSyncAt, syncReminderStartedAt;
+  final DateTime? lastSyncAt, syncReminderStartedAt, lastBackupAt;
   final List<SyncHistoryEntry> syncHistory;
   DatabaseSettings copyWith({
     String? mongoUri,
@@ -21,6 +23,8 @@ class DatabaseSettings {
     DatabaseVersion? cloudVersion,
     DateTime? lastSyncAt,
     DateTime? syncReminderStartedAt,
+    String? backupDirectory,
+    DateTime? lastBackupAt,
     List<SyncHistoryEntry>? syncHistory,
   }) => DatabaseSettings(
     mongoUri: mongoUri ?? this.mongoUri,
@@ -33,6 +37,8 @@ class DatabaseSettings {
             ? null
             : this.lastSyncAt),
     syncReminderStartedAt: syncReminderStartedAt ?? this.syncReminderStartedAt,
+    backupDirectory: backupDirectory ?? this.backupDirectory,
+    lastBackupAt: lastBackupAt ?? this.lastBackupAt,
     syncHistory: syncHistory ?? this.syncHistory,
     databaseVersion:
         databaseVersion ??
@@ -53,6 +59,8 @@ class DatabaseSettings {
     'cloudVersion': cloudVersion?.toJson(),
     'lastSyncAt': lastSyncAt?.toUtc().toIso8601String(),
     'syncReminderStartedAt': syncReminderStartedAt?.toUtc().toIso8601String(),
+    'backupDirectory': backupDirectory,
+    'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
     'syncHistory': syncHistory.map((entry) => entry.toJson()).toList(),
   };
 }
@@ -77,6 +85,16 @@ class DatabaseCloneResult {
   });
   final String mongoUri, database;
   final int rows, orphans, purchases;
+}
+
+class MongoBackupResult {
+  const MongoBackupResult({
+    required this.database,
+    required this.collections,
+    required this.rows,
+  });
+  final String database;
+  final int collections, rows;
 }
 
 class DatabaseSettingsException implements Exception {
