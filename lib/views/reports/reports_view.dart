@@ -1,5 +1,7 @@
 import 'reports_overview_view.dart';
+import 'customer_debt_chart.dart';
 import 'sales_charts.dart';
+import 'stock_chart.dart';
 import 'cash_category_report_view.dart';
 import '../../models/dashboard/dashboard_module.dart';
 import '../../services/report_excel_service.dart';
@@ -41,6 +43,7 @@ class _ReportsViewState extends State<ReportsView>
   String _quickRange = 'month';
   ReportKind _pawnMode = ReportKind.pawnDebt;
   ReportKind _debtMode = ReportKind.debts;
+  CustomerDebtTiming? _customerDebtTiming;
   ReportKind _repaymentMode = ReportKind.customerRepayments;
   static final _tabKinds = ReportKind.values
       .where(
@@ -325,8 +328,11 @@ class _ReportsViewState extends State<ReportsView>
                     onSelectionChanged: (value) => setState(() {
                       if (tab == ReportKind.pawn) {
                         _pawnMode = value.single;
-                      } else if (tab == ReportKind.debts) {
+                      } else                       if (tab == ReportKind.debts) {
                         _debtMode = value.single;
+                        if (_debtMode != ReportKind.customerDebt) {
+                          _customerDebtTiming = null;
+                        }
                       } else {
                         _repaymentMode = value.single;
                       }
@@ -533,7 +539,10 @@ class _ReportsViewState extends State<ReportsView>
             ReportKind.customerDebt,
             ReportKind.supplierDebt,
           ].contains(target);
-          if (debtTarget) _debtMode = target;
+          if (debtTarget) {
+            _debtMode = target;
+            if (target != ReportKind.customerDebt) _customerDebtTiming = null;
+          }
           if (_repaymentReport(target)) _repaymentMode = target;
           final index = _tabKinds.indexOf(
             _repaymentReport(target)
@@ -566,7 +575,28 @@ class _ReportsViewState extends State<ReportsView>
     final section = _controller.section(kind);
     if (section == null) return const SizedBox.shrink();
     final rows = section.rows;
-    final footer = _footer(kind, section);
+    final timing = kind == ReportKind.customerDebt
+        ? _customerDebtTiming
+        : null;
+    final listed = timing == null
+        ? rows
+        : [
+            for (final row in rows)
+              if (customerDebtTiming(row) == timing) row,
+          ];
+    final shown = timing == null
+        ? section
+        : ReportSection(
+            columns: section.columns,
+            rows: listed,
+            totals: {
+              'Tổng thanh toán': _moneyColumn(listed, 5),
+              'Đã thu': _moneyColumn(listed, 6),
+              'Còn nợ': _moneyColumn(listed, 7),
+            },
+            notes: section.notes,
+          );
+    final footer = _footer(kind, shown);
     final groups = _groups(kind, section);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -587,6 +617,19 @@ class _ReportsViewState extends State<ReportsView>
               },
             ),
           ],
+          if (kind == ReportKind.stock) ...[
+            StockValueChart(rows: rows),
+            const SizedBox(height: 12),
+          ],
+          if (kind == ReportKind.customerDebt) ...[
+            CustomerDebtAgingChart(
+              rows: rows,
+              selected: _customerDebtTiming,
+              onSelected: (value) =>
+                  setState(() => _customerDebtTiming = value),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (kind == ReportKind.sales)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -603,19 +646,15 @@ class _ReportsViewState extends State<ReportsView>
                   return Column(
                     children: [
                       Expanded(
-                        child: rows.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'Chưa có dữ liệu trong khoảng thời gian này.',
-                                ),
-                              )
+                        child: listed.isEmpty
+                            ? Center(child: Text(_emptyMessage(kind)))
                             : Material(
                                 color: Colors.transparent,
                                 child: ListView.separated(
-                                  itemCount: rows.length,
+                                  itemCount: listed.length,
                                   separatorBuilder: (_, _) => const Divider(),
                                   itemBuilder: (context, i) => InkWell(
-                                    onTap: _rowAction(kind, rows[i]),
+                                    onTap: _rowAction(kind, listed[i]),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 10,
@@ -626,7 +665,7 @@ class _ReportsViewState extends State<ReportsView>
                                         children: [
                                           Text(
                                             _cell(
-                                              rows[i][0],
+                                              listed[i][0],
                                               section.columns.first,
                                             ),
                                             style: const TextStyle(
@@ -639,7 +678,7 @@ class _ReportsViewState extends State<ReportsView>
                                             c++
                                           )
                                             Text(
-                                              '${section.columns[c].label}: ${_cell(rows[i][c], section.columns[c])}',
+                                              '${section.columns[c].label}: ${_cell(listed[i][c], section.columns[c])}',
                                             ),
                                         ],
                                       ),
@@ -679,9 +718,7 @@ class _ReportsViewState extends State<ReportsView>
                 }
                 return ScrollableDataTable(
                   fixedHeader: true,
-                  emptyContent: const Center(
-                    child: Text('Chưa có dữ liệu trong khoảng thời gian này.'),
-                  ),
+                  emptyContent: Center(child: Text(_emptyMessage(kind))),
                   expandRows:
                       kind == ReportKind.sales ||
                       kind == ReportKind.receipts ||
@@ -714,14 +751,14 @@ class _ReportsViewState extends State<ReportsView>
                               ),
                           ],
                         ),
-                  rowCount: rows.length,
+                  rowCount: listed.length,
                   rowBuilder: (index) => DataRow(
-                    onSelectChanged: _rowAction(kind, rows[index]) == null
+                    onSelectChanged: _rowAction(kind, listed[index]) == null
                         ? null
-                        : (_) => _rowAction(kind, rows[index])!(),
+                        : (_) => _rowAction(kind, listed[index])!(),
                     cells: [
                       for (final group in groups)
-                        DataCell(_groupCell(section, group, rows[index])),
+                        DataCell(_groupCell(section, group, listed[index])),
                     ],
                   ),
                 );
@@ -872,6 +909,28 @@ class _ReportsViewState extends State<ReportsView>
           : const Icon(Icons.download_outlined),
       label: Text(_exporting ? 'Đang xuất…' : 'Xuất Excel'),
     );
+  }
+
+  num? _moneyColumn(List<List<dynamic>> rows, int index) {
+    var sum = 0.0;
+    for (final row in rows) {
+      final value = index < row.length ? row[index] : null;
+      if (value is! num || !value.isFinite) return null;
+      sum += value;
+    }
+    return sum;
+  }
+
+  String _emptyMessage(ReportKind kind) {
+    final timing = kind == ReportKind.customerDebt
+        ? _customerDebtTiming
+        : null;
+    return switch (timing) {
+      CustomerDebtTiming.within => 'Chưa có khoản trong hạn.',
+      CustomerDebtTiming.overdue => 'Chưa có khoản quá hạn.',
+      CustomerDebtTiming.undated => 'Chưa có khoản chưa có ngày hẹn.',
+      null => 'Chưa có dữ liệu trong khoảng thời gian này.',
+    };
   }
 
   List<String>? _footer(ReportKind kind, ReportSection section) {

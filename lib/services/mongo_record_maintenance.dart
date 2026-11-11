@@ -3,6 +3,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import '../models/maintenance/record_maintenance.dart';
 import '../core/config/database_config.dart';
 import '../models/finance/cash_category.dart';
+import 'cost_delete_repair.dart';
 
 /// A durable per-parent change plan. Every write is an absolute, replayable update.
 /// Original documents are backed up individually to keep attachments out of plans.
@@ -10,8 +11,16 @@ class MongoRecordMaintenance implements RecordMaintenance {
   MongoRecordMaintenance(this.db, this.connect, {this.checkpoint});
   factory MongoRecordMaintenance.local() {
     final db = Db(DatabaseConfig.mongoUri);
+    var repairing = false;
     return MongoRecordMaintenance(db, () async {
       if (!db.isConnected) await db.open(writeConcern: WriteConcern.journaled);
+      if (repairing) return;
+      repairing = true;
+      try {
+        await repairStuckCostDeletes(db);
+      } finally {
+        repairing = false;
+      }
     });
   }
   @override
@@ -132,6 +141,10 @@ class MongoRecordMaintenance implements RecordMaintenance {
     }
     return value;
   }
+
+  bool _costSchemaStep(Map<String, dynamic> step, Map<String, dynamic> fields) =>
+      costCollections.contains(step['Collection']) &&
+      (fields.containsKey('ChiPhi') || fields.containsKey('TongChiPhi'));
 
   Future<void> checked(Future<dynamic> action) async {
     final result = await action;
@@ -481,17 +494,22 @@ class MongoRecordMaintenance implements RecordMaintenance {
         } else {
           final fields = Map<String, dynamic>.from(step['Fields'] as Map);
           final unset = (step['Unset'] as List?) ?? [];
-          await checked(
-            collection.updateOne(
-              {'_id': step['Id']},
-              {
-                if (fields.isNotEmpty) r'$set': fields,
-                if (unset.isNotEmpty)
-                  r'$unset': {for (final key in unset) key: ''},
-              },
-              upsert: step['Upsert'] == true,
-            ),
+          Future<dynamic> write() => collection.updateOne(
+            {'_id': step['Id']},
+            {
+              if (fields.isNotEmpty) r'$set': fields,
+              if (unset.isNotEmpty)
+                r'$unset': {for (final key in unset) key: ''},
+            },
+            upsert: step['Upsert'] == true,
           );
+          var result = await write();
+          if ((!result.isSuccess || result.hasWriteErrors) &&
+              _costSchemaStep(step, fields)) {
+            await refreshCostCollectionValidators(db);
+            result = await write();
+          }
+          await checked(Future.value(result));
         }
         index++;
         await checked(

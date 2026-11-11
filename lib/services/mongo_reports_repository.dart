@@ -1,3 +1,4 @@
+import 'cost_delete_repair.dart';
 import 'customer_address_migration.dart';
 import '../models/maintenance/record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -19,6 +20,7 @@ class MongoReportsRepository implements ReportsRepository {
       await migrateCustomerAddresses(_db);
       _addressesReady = true;
     }
+    await repairStuckCostDeletes(_db);
   }
 
   Future<List<Map<String, dynamic>>> _read(

@@ -1,5 +1,6 @@
 import 'package:mongo_dart/mongo_dart.dart';
 import '../core/config/database_config.dart';
+import 'cost_delete_repair.dart';
 import '../models/inventory/inventory_models.dart';
 import '../models/repositories/inventory_repository.dart';
 
@@ -17,6 +18,7 @@ class MongoInventoryRepository implements InventoryRepository {
 
   Future<void> _open() async {
     if (!_db.isConnected) await _db.open();
+    await repairStuckCostDeletes(_db);
     final schema = await _db.collection('_sql_metadata').findOne({
       '_id': 'product_schema_v2',
     });

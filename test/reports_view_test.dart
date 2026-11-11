@@ -770,4 +770,138 @@ void main() {
     expect(find.textContaining('35.000 đ'), findsWidgets);
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('Stock report shows inventory value by group', (t) async {
+    t.view.physicalSize = const Size(1400, 1000);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final repo = FakeReportsRepository()
+      ..source = {
+        'Xe': [
+          {
+            'IdXe': 1,
+            'TinhTrang': true,
+            'TinhTrangXe': 'moi',
+            'GiaNhap': 600000,
+          },
+          {
+            'IdXe': 2,
+            'TinhTrang': true,
+            'TinhTrangXe': 'cu',
+            'GiaNhap': 400000,
+          },
+          {
+            'IdXe': 3,
+            'TinhTrang': false,
+            'TinhTrangXe': 'moi',
+            'GiaNhap': 900000,
+          },
+        ],
+        'SanPham': [
+          {'IdSanPham': 8, 'LoaiSanPham': 'phu_tung'},
+          {'IdSanPham': 9, 'LoaiSanPham': 'phu_tung'},
+        ],
+        'TonKhoPhuTung': [
+          {'IdSanPham': 8, 'SoLuongTon': 2, 'GiaVonThamKhao': 50000},
+          {'IdSanPham': 9, 'SoLuongTon': 1},
+        ],
+      };
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportsView(initialKind: ReportKind.stock, repository: repo),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    final pie = find.byKey(const ValueKey('stock-value-pie'));
+    expect(pie, findsOneWidget);
+    expect(find.text('Giá trị tồn kho'), findsOneWidget);
+    for (final label in ['Xe mới', 'Xe cũ', 'Phụ tùng']) {
+      expect(
+        find.descendant(of: pie, matching: find.text(label)),
+        findsOneWidget,
+      );
+    }
+    expect(find.textContaining('600.000 đ · 60%'), findsOneWidget);
+    expect(find.textContaining('400.000 đ · 40%'), findsOneWidget);
+    expect(find.text('Chưa đủ dữ liệu'), findsOneWidget);
+    expect(find.textContaining('900.000 đ'), findsNothing);
+    t.view.physicalSize = const Size(420, 900);
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportsView(initialKind: ReportKind.stock, repository: repo),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('Customer debt chart opens the matching list', (t) async {
+    t.view.physicalSize = const Size(1400, 1000);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final now = DateTime.now();
+    final repo = FakeReportsRepository()
+      ..source = {
+        'HoaDonBan': [
+          {
+            'IdHoaDon': 1,
+            'IdKH': 1,
+            'NgayMua': now,
+            'NgayHen': now.subtract(const Duration(days: 3)),
+            'TongThanhToan': 300000,
+          },
+          {
+            'IdHoaDon': 2,
+            'IdKH': 2,
+            'NgayMua': now,
+            'NgayHen': now.add(const Duration(days: 5)),
+            'TongThanhToan': 100000,
+          },
+        ],
+        'KhachHang': [
+          {'IdKH': 1, 'TenKhachHang': 'Khách quá hạn'},
+          {'IdKH': 2, 'TenKhachHang': 'Khách trong hạn'},
+        ],
+        'SoNo': [
+          {'IdHoaDon': 1, 'SoTienDaTra': 0, 'SoTienConNo': 300000},
+          {'IdHoaDon': 2, 'SoTienDaTra': 0, 'SoTienConNo': 100000},
+        ],
+      };
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReportsView(initialKind: ReportKind.debts, repository: repo),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    await t.tap(find.text('Khách hàng nợ'));
+    await t.pumpAndSettle();
+    expect(find.byKey(const ValueKey('customer-debt-aging')), findsOneWidget);
+    expect(find.textContaining('Khách quá hạn'), findsOneWidget);
+    expect(find.textContaining('Khách trong hạn'), findsOneWidget);
+    expect(find.textContaining('300.000 đ · 75%'), findsOneWidget);
+    expect(find.textContaining('100.000 đ · 25%'), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('customer-debt-overdue')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Khách quá hạn'), findsOneWidget);
+    expect(find.textContaining('Khách trong hạn'), findsNothing);
+    await t.tap(find.byKey(const ValueKey('customer-debt-within')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Khách quá hạn'), findsNothing);
+    expect(find.textContaining('Khách trong hạn'), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('customer-debt-within')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Khách quá hạn'), findsOneWidget);
+    expect(find.textContaining('Khách trong hạn'), findsOneWidget);
+    t.view.physicalSize = const Size(420, 900);
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+  });
 }

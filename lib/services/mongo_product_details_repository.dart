@@ -1,4 +1,5 @@
 import '../models/maintenance/record_maintenance.dart';
+import 'cost_delete_repair.dart';
 import 'mongo_record_maintenance.dart';
 import 'mongo_product_cash.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -14,6 +15,7 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, _connect);
   Future<void> _connect() async {
     if (!_db.isConnected) await _db.open(writeConcern: WriteConcern.journaled);
+    await repairStuckCostDeletes(_db);
   }
 
   Map<String, dynamic> _identity(ProductReference p) => {
