@@ -304,6 +304,13 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('settings-check-update')));
     await tester.pumpAndSettle();
     expect(find.textContaining('9.0.0+4'), findsWidgets);
-    expect(find.textContaining('chỉ chạy trên Windows'), findsOneWidget);
+    if (Platform.isWindows) {
+      expect(
+        find.byKey(const ValueKey('settings-install-update')),
+        findsOneWidget,
+      );
+    } else {
+      expect(find.textContaining('chỉ chạy trên Windows'), findsOneWidget);
+    }
   });
 }
