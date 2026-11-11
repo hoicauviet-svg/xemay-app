@@ -1,8 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:xemay_app/models/printing/pawn_contract_data.dart';
+import 'package:xemay_app/models/printing/sale_contract_data.dart';
 import 'package:xemay_app/models/printing/sales_invoice_data.dart';
 import 'package:xemay_app/models/sales/sale_models.dart';
+import 'package:xemay_app/services/sale_contract_pdf.dart';
 import 'package:xemay_app/services/sales_invoice_pdf.dart';
 import 'package:xemay_app/views/sales/sales_order_preview_popup.dart';
 
@@ -120,67 +124,93 @@ void main() {
       ).writeAsBytesSync(await SalesInvoicePdf.build(long));
     },
   );
+  test('Sale contract follows the Toàn Hợp form and order amounts', () {
+    final contract = SaleContractData(sample());
+    final values = contract.values;
+    expect(values['buyerName'], 'Nguyễn Văn Bình');
+    expect(values['phone'], '0901234567');
+    expect(values['year'], '2026');
+    expect(values['paidAmount'], '25.000.000');
+    expect(values['paidWords'], vietnameseMoneyWords(25000000));
+    expect(values['dueWords'], 'Không đồng');
+    expect(values['toDay'], '……');
+    expect(values['identityNumber'], contains('…'));
+    expect(contract.goodsLines.join('\n'), contains('KHUNG-0007'));
+    expect(contract.goodsLines.join('\n'), contains('MAY-0007'));
+    expect(contract.goodsLines.join('\n'), contains('Dầu nhớt xe máy × 2'));
+    final source = sample(credit: true);
+    final credit = SaleContractData(
+      SalesInvoiceData(
+        draft: source.draft,
+        customer: {
+          ...source.customer,
+          'SoCCCD': '012345678901',
+          'NgayCap': DateTime.utc(2020, 2, 1),
+          'NoiCap': 'Yên Bái',
+        },
+        vehicles: source.vehicles,
+      ).asSaved(501),
+    );
+    expect(credit.fileName, 'hop-dong-mua-ban-501.pdf');
+    expect(credit.values['identityNumber'], '012345678901');
+    expect(credit.values['identityDate'], '01/02/2020');
+    expect(credit.values['dueAmount'], '10.000.000');
+    expect(credit.values['toDay'], '11');
+    expect(credit.values['toMonth'], '12');
+    expect(credit.values['commitment'], contains('Giao đủ xe'));
+  });
+  test('Sale contract PDF uses the Vietnamese template', () async {
+    final bytes = await SaleContractPdf.build(sample(credit: true));
+    expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+    final pages = RegExp(
+      r'/Type\s*/Page(?!s)',
+    ).allMatches(String.fromCharCodes(bytes)).length;
+    expect(pages, 1);
+    final dir = Directory('build/test-results')..createSync(recursive: true);
+    File('${dir.path}/sale-contract-sample.pdf').writeAsBytesSync(bytes);
+  });
   testWidgets(
-    'Preview contains invoice print and contract placeholder on narrow windows',
+    'Preview prints the sale contract from the order without saving it',
     (tester) async {
       tester.view.physicalSize = const Size(420, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      Uint8List? printed;
+      String? fileName;
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: SalesOrderPreviewPopup(data: sample())),
+          home: Scaffold(
+            body: SalesOrderPreviewPopup(
+              data: sample(),
+              buildPdf: (_) async => Uint8List.fromList('%PDF'.codeUnits),
+              buildContractPdf: (_) async =>
+                  Uint8List.fromList('%PDF-contract'.codeUnits),
+              printDocument: (bytes, name) async {
+                printed = bytes;
+                fileName = name;
+              },
+            ),
+          ),
         ),
       );
-      await tester.pumpAndSettle();
-      expect(find.text('In hóa đơn bán hàng'), findsOneWidget);
-      final contract = tester.widget<OutlinedButton>(
-        find.widgetWithText(OutlinedButton, 'In hợp đồng mua bán'),
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.widgetWithText(Tab, 'Hóa đơn'), findsOneWidget);
+      expect(find.widgetWithText(Tab, 'Hợp đồng'), findsOneWidget);
+      final invoicePrint = tester.widget<FloatingActionButton>(
+        find.byKey(const ValueKey('print-sales-invoice')),
       );
-      expect(contract.onPressed, isNull);
-      expect(
-        find.text('Hợp đồng mua bán: chờ mẫu bạn cung cấp.'),
-        findsOneWidget,
-      );
+      expect(invoicePrint.onPressed, isNotNull);
+      await tester.tap(find.widgetWithText(Tab, 'Hợp đồng'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byKey(const ValueKey('print-sale-contract')));
+      await tester.pump();
+      expect(fileName, 'hop-dong-mua-ban-2026-11-11.pdf');
+      expect(String.fromCharCodes(printed!), '%PDF-contract');
+      await tester.pumpWidget(const SizedBox.shrink());
       expect(tester.takeException(), isNull);
     },
   );
-  testWidgets('Print failure after save does not save the invoice again', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1400, 1000);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    var saves = 0, builds = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SalesOrderPreviewPopup(
-            data: sample(),
-            onSave: () async {
-              saves++;
-              return 501;
-            },
-            buildPdf: (data) async {
-              builds++;
-              expect(data.invoiceId, 501);
-              throw StateError('PDF test failure');
-            },
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('save-print-sales-invoice')));
-    await tester.pumpAndSettle();
-    expect(saves, 1);
-    expect(builds, 1);
-    expect(find.textContaining('Đơn #501 đã lưu.'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('print-sales-invoice')));
-    await tester.pumpAndSettle();
-    expect(saves, 1);
-    expect(builds, 2);
-    expect(tester.takeException(), isNull);
-  });
 }

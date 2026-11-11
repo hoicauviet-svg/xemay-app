@@ -2,56 +2,111 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import '../../models/printing/sale_contract_data.dart';
 import '../../models/printing/sales_invoice_data.dart';
+import '../../services/sale_contract_pdf.dart';
 import '../../services/sales_invoice_pdf.dart';
 import '../widgets/form_popup.dart';
 
 class SalesOrderPreviewPopup extends StatefulWidget {
-  const SalesOrderPreviewPopup({super.key, required this.data, this.buildPdf});
+  const SalesOrderPreviewPopup({
+    super.key,
+    required this.data,
+    this.buildPdf,
+    this.buildContractPdf,
+    this.printDocument,
+  });
   final Future<Uint8List> Function(SalesInvoiceData)? buildPdf;
+  final Future<Uint8List> Function(SalesInvoiceData)? buildContractPdf;
+  final Future<void> Function(Uint8List bytes, String name)? printDocument;
   final SalesInvoiceData data;
   @override
   State<SalesOrderPreviewPopup> createState() => _SalesOrderPreviewPopupState();
 }
 
-class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup> {
-  late Future<Uint8List> _document;
+class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+  late Future<Uint8List> _invoice;
+  Future<Uint8List>? _contract;
   bool _printing = false;
   String? _error;
+  int? _errorTab;
   @override
   void initState() {
     super.initState();
-    _document = _build();
+    _tabs = TabController(length: 2, vsync: this);
+    _invoice = _buildInvoice();
   }
 
-  Future<Uint8List> _build() =>
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<Uint8List> _buildInvoice() =>
       (widget.buildPdf ?? SalesInvoicePdf.build)(widget.data);
-  void _retry() => setState(() {
-    _error = null;
-    _document = _build();
-  });
-  Future<void> _print(Uint8List bytes) async {
+  Future<Uint8List> _buildContract() =>
+      (widget.buildContractPdf ?? SaleContractPdf.build)(widget.data);
+
+  void _openContract() {
+    if (_contract == null) {
+      setState(() {
+        _contract = _buildContract();
+      });
+    }
+  }
+
+  Future<void> _send(
+    int tab,
+    Future<Uint8List> Function() build,
+    String name,
+    String failure,
+  ) async {
     if (_printing) return;
     setState(() {
       _printing = true;
       _error = null;
+      _errorTab = null;
     });
     try {
-      await Printing.layoutPdf(
-        onLayout: (_) async => bytes,
-        name: widget.data.fileName,
-        format: PdfPageFormat.a4,
-        dynamicLayout: false,
-      );
+      final bytes = await build();
+      await (widget.printDocument ?? _systemPrint)(bytes, name);
     } catch (_) {
-      if (mounted)
-        setState(
-          () => _error =
-              'Không in được hóa đơn. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
-        );
+      if (mounted) {
+        setState(() {
+          _error = failure;
+          _errorTab = tab;
+        });
+      }
     } finally {
       if (mounted) setState(() => _printing = false);
     }
+  }
+
+  Future<void> _systemPrint(Uint8List bytes, String name) => Printing.layoutPdf(
+    onLayout: (_) async => bytes,
+    name: name,
+    format: PdfPageFormat.a4,
+    dynamicLayout: false,
+  );
+
+  Future<void> _printInvoice() => _send(
+    0,
+    () => _invoice,
+    widget.data.fileName,
+    'Không in được hóa đơn. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
+  );
+
+  Future<void> _printContract() {
+    _contract ??= _buildContract();
+    return _send(
+      1,
+      () => _contract!,
+      SaleContractData(widget.data).fileName,
+      'Không in được hợp đồng mua bán. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
+    );
   }
 
   @override
@@ -60,89 +115,158 @@ class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup> {
     child: FormPopup(
       title: 'Xem trước đơn bán hàng',
       canClose: !_printing,
-      child: FutureBuilder<Uint8List>(
-        future: _document,
-        builder: (context, snapshot) => Column(
-          children: [
-            Expanded(
-              child: snapshot.hasError
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('Không tạo được bản xem trước.'),
-                          TextButton(
-                            onPressed: _retry,
-                            child: const Text('Thử lại'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : snapshot.hasData
-                  ? PdfPreview(
-                      key: const ValueKey('sales-invoice-preview'),
-                      build: (_) async => snapshot.data!,
-                      initialPageFormat: PdfPageFormat.a4,
-                      useActions: false,
-                      canChangeOrientation: false,
-                      canChangePageFormat: false,
-                      canDebug: false,
-                      allowSharing: false,
-                      allowPrinting: false,
-                      onError: (_, _) => const Center(
-                        child: Text(
-                          'Không hiển thị được hóa đơn. Vui lòng thử mở lại.',
-                        ),
-                      ),
-                    )
-                  : const Center(child: CircularProgressIndicator()),
-            ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+      child: Column(
+        children: [
+          TabBar(
+            controller: _tabs,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            labelColor: const Color(0xFF176455),
+            unselectedLabelColor: const Color(0xFF6E7D83),
+            indicatorColor: const Color(0xFF176455),
+            dividerColor: Colors.transparent,
+            onTap: (index) {
+              if (index == 1) _openContract();
+            },
+            tabs: const [
+              Tab(text: 'Hóa đơn'),
+              Tab(text: 'Hợp đồng'),
+            ],
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _PreviewPane(
+                  document: _invoice,
+                  printKey: const ValueKey('print-sales-invoice'),
+                  printing: _printing,
+                  error: _errorTab == 0 ? _error : null,
+                  onPrint: _printInvoice,
+                  onRetry: () => setState(() {
+                    _error = null;
+                    _errorTab = null;
+                    _invoice = _buildInvoice();
+                  }),
                 ),
-              ),
-            const Divider(height: 1),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      Tooltip(
-                        message: 'Chờ mẫu hợp đồng mua bán',
-                        child: OutlinedButton.icon(
-                          onPressed: null,
-                          icon: const Icon(Icons.description_outlined),
-                          label: const Text('In hợp đồng mua bán'),
-                        ),
-                      ),
-                      FilledButton.icon(
-                        key: const ValueKey('print-sales-invoice'),
-                        onPressed: _printing || !snapshot.hasData
-                            ? null
-                            : () => _print(snapshot.data!),
-                        icon: const Icon(Icons.print_outlined),
-                        label: Text(
-                          _printing ? 'Đang in…' : 'In hóa đơn bán hàng',
-                        ),
-                      ),
-                    ],
-                  ),
+                _PreviewPane(
+                  document: _contract,
+                  printKey: const ValueKey('print-sale-contract'),
+                  printing: _printing,
+                  error: _errorTab == 1 ? _error : null,
+                  onPrint: _printContract,
+                  onRetry: () => setState(() {
+                    _error = null;
+                    _errorTab = null;
+                    _contract = _buildContract();
+                  }),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
+  );
+}
+
+class _PreviewPane extends StatelessWidget {
+  const _PreviewPane({
+    required this.document,
+    required this.printKey,
+    required this.printing,
+    required this.onPrint,
+    required this.onRetry,
+    this.error,
+  });
+  final Future<Uint8List>? document;
+  final Key printKey;
+  final bool printing;
+  final String? error;
+  final VoidCallback onPrint;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Column(
+        children: [
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          Expanded(
+            child: document == null
+                ? const SizedBox.shrink()
+                : FutureBuilder<Uint8List>(
+                    future: document,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Không tạo được bản xem trước.'),
+                              TextButton(
+                                onPressed: onRetry,
+                                child: const Text('Thử lại'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      return PdfPreview(
+                        key: ValueKey(printKey),
+                        build: (_) async => snapshot.data!,
+                        initialPageFormat: PdfPageFormat.a4,
+                        useActions: false,
+                        canChangeOrientation: false,
+                        canChangePageFormat: false,
+                        canDebug: false,
+                        allowSharing: false,
+                        allowPrinting: false,
+                        onError: (_, _) => const Center(
+                          child: Text(
+                            'Không hiển thị được bản xem trước. Vui lòng thử mở lại.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+      Positioned(
+        right: 16,
+        bottom: 16,
+        child: FloatingActionButton(
+          key: printKey,
+          heroTag: printKey,
+          tooltip: printing ? 'Đang in…' : 'In',
+          onPressed: printing ? null : onPrint,
+          backgroundColor: const Color(0xFF176455),
+          foregroundColor: Colors.white,
+          child: printing
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.print_outlined),
+        ),
+      ),
+    ],
   );
 }

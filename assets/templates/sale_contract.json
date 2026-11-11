@@ -1,0 +1,57 @@
+{
+  "banner": {
+    "nation": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+    "motto": "Độc lập – Tự do – Hạnh phúc",
+    "mark": "-------*-------",
+    "title": "HỢP ĐỒNG MUA BÁN"
+  },
+  "paragraphs": [
+    {"text": "Hôm nay, ngày {day} tháng {month} năm {year}.", "kind": "body"},
+    {"text": "Đại diện bên A: (Bên bán hàng) “Doanh nghiệp tư nhân ô tô xe máy Toàn Hợp”", "kind": "section"},
+    {"text": "Ông: Nguyễn Văn Toàn", "kind": "body"},
+    {"text": "Đại diện cửa hàng mua bán ô tô xe máy liên doanh Hàn Quốc - Nhật Bản - Đài Loan - Trung Quốc.", "kind": "body"},
+    {"text": "Địa chỉ: Số nhà 45 Tuệ Tĩnh, Xã Mậu A, Tỉnh Lào Cai", "kind": "body"},
+    {"text": "Điện thoại: 0216. 3835. 512", "kind": "body"},
+    {"text": "Đại diện bên B: (Bên mua hàng)", "kind": "section"},
+    {"kind": "fill", "parts": [
+      {"text": "Ông (bà): {buyerName}", "flex": 3},
+      {"text": "Số ĐT: {phone}", "flex": 2}
+    ]},
+    {"kind": "fill", "parts": [
+      {"text": "Địa chỉ: {address}", "flex": 1}
+    ]},
+    {"kind": "fill", "parts": [
+      {"text": "Số CMND (hộ chiếu): {identityNumber}", "flex": 3},
+      {"text": "cấp ngày: {identityDate}", "flex": 2},
+      {"text": "tại {identityPlace}", "flex": 2}
+    ]},
+    {"text": "Chúng tôi cùng nhau bàn bạc, thống nhất hợp đồng thoả thuận với các điều khoản sau:", "kind": "body"},
+    {"text": "Điều I: Bản kê loại hàng hoá (ô tô, xe máy)", "kind": "section"},
+    {"kind": "goods"},
+    {"kind": "fill", "parts": [{"text": "Đã trả bằng số: {paidAmount}", "flex": 1}]},
+    {"kind": "fill", "parts": [{"text": "Đã trả bằng chữ: {paidWords}", "flex": 1}]},
+    {"kind": "fill", "parts": [{"text": "Còn nợ bằng số: {dueAmount}", "flex": 1}]},
+    {"kind": "fill", "parts": [{"text": "Còn nợ bằng chữ: {dueWords}", "flex": 1}]},
+    {"text": "Điều II: Nội dung hợp đồng mua bán ô tô, xe máy trả chậm trong thời gian", "kind": "section"},
+    {"text": "Từ ngày {fromDay} tháng {fromMonth} năm {fromYear} đến ngày {toDay} tháng {toMonth} năm {toYear}.", "kind": "body"},
+    {"text": "Quý khách không trả hết tiền lấy đăng ký, cửa hàng có quyền thu xe mà không cần báo trước. Cửa hàng không hoàn lại số tiền ban đầu khách đã trả.", "kind": "body"},
+    {"kind": "fill", "parts": [
+      {"text": "Điều III: Cam kết chung:", "bold": true, "flex": 0},
+      {"text": " {commitment}", "flex": 1}
+    ]},
+    {"kind": "fill", "parts": [{"text": "", "flex": 1}]},
+    {"text": "- Nếu bên B sai hẹn thanh toán đợt đầu, cửa hàng sẽ thu lại xe và hủy hợp đồng.", "kind": "body"},
+    {"text": "Bên A phải bán hàng cho bên B (xe ô tô, xe máy) mới 100% bảo hành theo đúng quy định của nhà máy.", "kind": "body"},
+    {"text": "Bên B thực hiện nghiêm chỉnh các điều khoản đã ghi trong hợp đồng, phải có trách nhiệm bảo quản hàng hoá tốt: không được làm mất, không được bán, chuyển nhượng dưới bất kỳ hình thức nào khi chưa được sự đồng ý của bên A. Nếu bên B tự ý bán hàng hoá khi chưa trả hết nợ thì được coi là lạm dụng tín nhiệm lừa đảo tài sản của bên A.", "kind": "body"},
+    {"text": "- Bên B không trả đúng hạn, bên A có quyền thanh lý hàng hoá mà không cần có sự thoả thuận nào khác của bên B. Thu hồi hàng hoá, thanh lý hợp đồng để trả nợ cho bên A. Đến hạn trả nợ mà bên B chưa thanh toán, bên A đến báo nợ thì mỗi lần bên B phải trả cho bên A là 50.000đ/lần.", "kind": "body"},
+    {"text": "- Trong thời gian quá hạn tính lãi suất 2%.", "kind": "body"},
+    {"text": "- Nếu bên B tự ý bán tài sản (xe ô tô, xe máy) mua của bên A mà chưa thanh toán hết tiền cho bên A thì bên A được phép tịch thu tài sản khác của bên B có giá trị tương đương với tài sản của bên A.", "kind": "body"},
+    {"text": "Điều IV: Bản hợp đồng được lập thành 02 bản có giá trị pháp lý như nhau, mỗi bên giữ một bản. Hợp đồng lập xong hai bên cùng thoả thuận thống nhất và ký tên trong trạng thái thần kinh bình thường. Nếu bên nào đơn phương thay đổi hợp đồng thì bên đó phải chịu trách nhiệm trước pháp luật.", "kind": "body"},
+    {"text": "Điều V: Khi bên B trả hết tiền nợ, bên A phải thanh lý hợp đồng.", "kind": "body"}
+  ],
+  "signatures": [
+    "ĐẠI DIỆN BÊN BÁN HÀNG",
+    "ĐẠI DIỆN BÊN MUA HÀNG\n(Đọc kỹ trước khi ký)"
+  ],
+  "note": "Lưu ý: Hợp đồng này chỉ có giá trị với ngày dương lịch, không tính ngày âm lịch."
+}
