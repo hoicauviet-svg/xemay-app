@@ -449,7 +449,8 @@ class MongoSalesRepository implements SalesRepository {
         'IdHoaDon': invoice,
         ...line.toMap(),
         'DongSo': index + 1,
-        'GiaNhap': purchaseCosts[index],
+        // Service cost is zero even when resuming an older journal with null costs.
+        'GiaNhap': line.kind == 'dich_vu' ? 0 : purchaseCosts[index],
         'NguonGiaNhap': line.kind == 'phu_tung'
             ? 'TonKhoPhuTung.GiaVonThamKhao'
             : line.kind == 'xe'

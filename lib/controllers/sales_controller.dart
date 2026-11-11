@@ -1,3 +1,4 @@
+import '../models/printing/sales_invoice_data.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
@@ -157,6 +158,75 @@ class SalesController extends ChangeNotifier {
       return 'Vui lòng nhập giá bán hợp lệ cho từng sản phẩm.';
     }
     return discountError ?? paidError ?? dueDateError ?? interestDateError;
+  }
+
+  /// A permissive print snapshot, separate from checkout validation.
+  SalesInvoiceData previewInvoice() {
+    final missingPrices = <int>{};
+    final lines = <SaleLine>[];
+    final vehicles = <int, Map<String, dynamic>>{};
+    for (var i = 0; i < cart.items.length; i++) {
+      final item = cart.items[i];
+      final price = item.unitPrice;
+      if (price == null ||
+          price < 0 ||
+          price > SaleDraft.maxMoney ~/ item.quantity)
+        missingPrices.add(i);
+      lines.add(
+        SaleLine(
+          kind: item.service
+              ? 'dich_vu'
+              : item.vehicle
+              ? 'xe'
+              : 'phu_tung',
+          name: item.name,
+          quantity: item.quantity,
+          price: missingPrices.contains(i) ? 0 : price!,
+          productId: item.service ? null : item.product['IdSanPham'] as int?,
+          vehicleId: item.vehicle ? item.product['IdXe'] as int? : null,
+          serviceId: item.service ? item.product['_id'] as String : null,
+        ),
+      );
+      if (item.vehicle && item.product['IdXe'] is int)
+        vehicles[item.product['IdXe']] = Map<String, dynamic>.from(
+          item.product,
+        );
+    }
+    final blank = <String>{
+      if (cart.items.isEmpty || missingPrices.isNotEmpty) 'subtotal',
+      if (discountText.trim().isEmpty || discountError != null) 'discount',
+      if (paidText.trim().isEmpty || paidError != null) ...[
+        'paid',
+        'collected',
+        'due',
+        'change',
+      ],
+      if (cart.items.isEmpty ||
+          missingPrices.isNotEmpty ||
+          discountError != null) ...[
+        'total',
+        'collected',
+        'due',
+        'change',
+      ],
+    };
+    return SalesInvoiceData(
+      allowIncomplete: true,
+      blankFields: blank,
+      blankPriceLines: missingPrices,
+      draft: SaleDraft(
+        lines: lines,
+        date: date,
+        discount: discountError == null ? discount! : 0,
+        paid: paidError == null ? paid! : 0,
+        customerId: customer?['IdKH'] as int?,
+        paymentDueDate: paymentDueDate,
+        interestDate: interestDate,
+        notes: notes,
+      ),
+      customer: customer ?? {'TenKhachHang': customerQuery.trim()},
+      vehicles: vehicles,
+    );
   }
 
   SaleDraft snapshot() => SaleDraft(

@@ -107,10 +107,8 @@ void main() {
   });
 
   test('release ordering uses version then build number', () {
-    final current = AppRelease.parse(
-      version: AppVersion.name,
-      build: AppVersion.build,
-    );
+    // Fixed fixtures test ordering independently of each release's build number.
+    final current = AppRelease.parse(version: '1.0.0', build: 1);
     expect(_release().isNewerThan(current), isTrue);
     expect(
       AppRelease.parse(version: '1.0.0', build: 1).isNewerThan(current),

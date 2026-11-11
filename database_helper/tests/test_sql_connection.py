@@ -69,6 +69,14 @@ class SqlAuthenticationTests(unittest.TestCase):
                 sql_connection('Server=local;Trusted_Connection=True;')
         self.assertNotIn('private data', str(error.exception))
 
+    def test_windows_style_tls_booleans_are_normalized_for_odbc(self):
+        options, _ = self.connect(r'Server=.\SQLEXPRESS;Database=XM;Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True;')
+        self.assertEqual(options['encrypt'], 'yes')
+        self.assertEqual(options['trustservercertificate'], 'yes')
+        options, _ = self.connect('Server=local;UID=u;PWD=p;Encrypt=False;TrustServerCertificate=0;')
+        self.assertEqual(options['encrypt'], 'no')
+        self.assertEqual(options['trustservercertificate'], 'no')
+
 
 if __name__ == '__main__':
     unittest.main()

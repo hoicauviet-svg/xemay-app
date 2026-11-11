@@ -309,13 +309,132 @@ Cho phép IP máy truy cập trên Atlas; tài khoản cần quyền đọc, ghi
 chỉ mục và tạo database bản sao. Chuỗi kết nối được lưu cùng cấu hình kết nối trong
 kho bảo mật của hệ điều hành.
 
-- Đồng bộ lên cloud: sao chép toàn bộ database đang dùng thành database mới trên cloud,
-  giữ chỉ mục và validator, đối chiếu dữ liệu rồi cập nhật URI cloud đã lưu tới bản mới.
-- Tải dữ liệu từ cloud: tạo database mới trên máy từ URI cloud đã lưu, đối chiếu rồi
-  chuyển ứng dụng sang bản này. Database trước đó được giữ lại.
+- So sánh phiên bản: tính mã SHA-256 từ nội dung, chỉ mục và validator; lưu phiên bản,
+  số lần thay đổi quan sát được và thời gian kiểm tra trong `_app_sync_meta` trên
+  mỗi database, đồng thời lưu phiên bản gần nhất trong cấu hình ứng dụng.
+- Đồng bộ lên cloud / tải về: luôn so sánh trước, hiện số bản ghi chỉ có ở từng bên,
+  giống nhau, xung đột nội dung và xung đột cấu trúc. Gộp theo `_id` vào database mới.
+- Khi xung đột, mặc định không ghi đè. Người dùng phải chọn ưu tiên máy hoặc cloud.
+  Bản ghi chỉ có ở một bên được giữ lại; không tự truyền thao tác xóa. Bộ đếm cấp mã
+  giữ giá trị lớn nhất. Các chỉ mục duy nhất và validator được kiểm tra khi tạo bản gộp.
+- Phiên bản thay đổi sau khi xác nhận hoặc trong khi gộp sẽ làm thao tác dừng;
+  phải so sánh lại. Bản gốc không bị ghi đè và kết quả chưa hoàn tất không được chọn.
 
-Đây là đồng bộ toàn bộ theo bản sao, không tự gộp thay đổi giữa nhiều máy. Dừng nhập
-liệu trên các máy trong lúc đồng bộ; nếu phát hiện nguồn thay đổi, thao tác báo lỗi
-và không chuyển kết nối. Bản sao chưa hoàn tất có thể còn trên đích nhưng không được
-chọn sử dụng. Tài khoản chỉ có quyền trên một database cố định cần được cấp thêm
-quyền tạo database bản sao. Các view/time series chưa được hỗ trợ.
+Sau khi gộp, kết quả được tạo ở cả hai phía và đối chiếu toàn bộ nội dung/chỉ mục.
+Ứng dụng chuyển cả URI máy và URI cloud sang hai bản đã đối chiếu, dùng chung mã
+phiên bản và số phiên bản; các database gốc được giữ lại. Đây là gộp hai bản dữ liệu theo khóa và bên ưu tiên,
+không phải gộp ba chiều hoặc tự giải quyết quan hệ hóa đơn/công nợ/tồn kho. Cần dừng
+nhập liệu và đối chiếu nghiệp vụ trước khi ưu tiên một bên. Tài khoản cloud cần quyền
+ghi metadata, tạo database, collection và index; view/time series chưa được hỗ trợ.
+
+Chỉ phát hành/đẩy GitHub khi được yêu cầu; các thay đổi đang phát triển được giữ ở máy.
+
+
+### Nhắc đồng bộ và lịch sử
+
+Mỗi lần mở app, nếu đã đủ 30 ngày từ lần đồng bộ thành công gần nhất thì hiện lời
+nhắc, có nút mở thẳng tab MongoDB Cloud hoặc để sau. Nếu chưa từng đồng bộ, mốc
+bắt đầu được lưu từ lần đầu dùng cơ chế này. Lỗi hoặc hủy thao tác không lùi mốc nhắc.
+
+Tab Cloud chia thành Kết nối, Phiên bản & đồng bộ, Lịch sử. Cấu hình bảo mật lưu
+thời điểm thành công gần nhất và 50 lần thực hiện gần nhất trên máy (thành công/
+thất bại, chiều đồng bộ, phiên bản, số bảng/dòng), không lưu URI/mật khẩu trong lịch sử.
+
+
+### Kiểm thử đồng bộ với MongoDB thật
+
+`tool/test_cloud_sync_live.py` đọc hai kết nối đã lưu trong Keychain trên macOS
+(hoặc biến môi trường `XEMAY_LOCAL_URI`, `XEMAY_CLOUD_URI`), tạo database thử nghiệm
+riêng với sản phẩm/khách hàng mẫu, thử tải lên rồi thay đổi dữ liệu cloud và tải về.
+Kiểm tra BSON, chỉ mục, validator và phiên bản hai phía; dọn đúng các database thử
+nghiệm sau khi chạy. Không thay đổi cấu hình, ngày đồng bộ hay dữ liệu kinh doanh.
+Báo cáo không chứa mật khẩu nằm ở `build/test-results/cloud-sync-live.json`.
+Tên database bản sao giới hạn tối đa 36 byte để phù hợp giới hạn Atlas 38 byte.
+
+
+### Tối ưu so sánh phiên bản cloud
+
+So sánh đọc hai endpoint song song, đọc theo batch 5.000 dòng và chỉ giữ mã băm
+bản ghi thay vì toàn bộ nội dung. Giao diện nhận tiến trình theo bảng và số dòng,
+hiển thị thời gian đã chạy. Toàn bộ bước so sánh có giới hạn khoảng 3 phút.
+
+Trên máy chủ hỗ trợ Change Streams cùng sự kiện thay đổi cấu trúc mở rộng, ứng dụng
+lưu mốc xác nhận trong metadata và chỉ dùng lại phiên bản cũ nếu máy chủ xác nhận
+không có thay đổi dữ liệu/chỉ mục/validator kể từ mốc đó. Nếu hai phiên bản khớp,
+không tải lại dữ liệu cloud. Nếu có thay đổi, mốc hết hạn hoặc không đủ quyền theo
+dõi, ứng dụng đọc và đối chiếu lại; máy standalone vẫn dùng hai lượt xác nhận.
+Không suy luận dữ liệu giống nhau chỉ dựa trên số lượng bản ghi hoặc thời gian.
+
+Đo thời gian với kết nối đã lưu: `tool/benchmark_cloud_comparison.py`.
+Báo cáo tại `build/test-results/cloud-comparison-benchmark.json` (không chứa URI hoặc
+mật khẩu). Việc đo chỉ đọc dữ liệu kinh doanh và cập nhật metadata phiên bản.
+
+
+### Kiểm tra tương thích Windows
+
+Mục tiêu bộ cài: Windows 10/11 x64; Windows 11 ARM chạy ứng dụng x64 qua giả lập.
+Không phát hành bản Windows 32-bit hoặc Windows 10 ARM. Python và driver SQL được
+đóng gói trong bộ cài; máy sử dụng không cần cài Python riêng. Chuỗi kết nối được
+bảo vệ bằng DPAPI của tài khoản Windows, log nằm dưới `%APPDATA%`.
+
+Quy trình `tool/build_windows_installer.ps1` dựng native helper trên Windows,
+kiểm tra SQL/cloud/đường dẫn có dấu và BOM, thử lại helper từ ZIP đã giải nén, xác
+nhận asset nhúng đúng checksum và đủ DLL Visual C++ trước khi tạo bộ cài.
+Bản Windows chỉ chứa asset helper Windows; pubspec gốc được khôi phục sau khi dựng.
+Các file `run.command`, `tool/release.command`, `ensure_database_helper.py` phục vụ
+máy macOS phát triển; chúng không nằm trong luồng chạy của bộ cài Windows.
+
+Các script QA cũ `tool/check_*.dart` dùng môi trường Python/đường dẫn cố định của máy
+phát triển macOS; không phải thành phần phân phối cho người dùng Windows.
+
+### In hợp đồng cầm đồ
+
+Khi tạo phiếu, chọn **Lưu & in hợp đồng** để lưu phiếu rồi mở thông tin bản in.
+Có thể in lại bằng nút **In hợp đồng** trong chi tiết phiếu. Điền bổ sung CMND/CCCD,
+ngày/nơi cấp và người ủy quyền nếu cần, sau đó chọn **Xem trước & in**. Nút **Lưu PDF**
+ở góc màn hình xem trước cho phép lưu file; nút máy in mở hộp thoại in của hệ điều hành.
+
+Nội dung lấy từ mẫu hợp đồng Toàn Hợp được cung cấp, lưu trong
+`assets/templates/pawn_contract.json`; ngày tháng và số tiền bằng chữ tự điền theo
+phiếu đã lưu. Mục chưa có dữ liệu để dòng chấm, không tự tạo thông tin cá nhân.
+Thông tin bổ sung chỉ dùng trong lần in hiện tại, không ghi vào hồ sơ khách hàng.
+Phông Noto Serif tiếng Việt đi kèm ứng dụng, không cần tải phông khi in. In hoặc lưu
+PDF lỗi không tạo lại phiếu và không xóa phiếu đã lưu.
+
+### Địa chỉ khách hàng không dùng danh mục xã
+
+`KhachHang.DiaChiChiTiet` lưu toàn bộ địa chỉ. Khi mở phần khách hàng, phiếu
+cầm đồ, đơn hàng hoặc báo cáo, ứng dụng chuyển dữ liệu cũ bằng cách ghép `Xa.TenXa`
+vào địa chỉ chi tiết, bỏ `IdXa` và xóa collection `Xa` sau khi kiểm tra xong.
+Danh mục cũ được lưu trong `_app_address_archive` để tra cứu khi cần. Nếu một
+khách hàng tham chiếu xã không tồn tại, bước chuyển dừng và giữ nguyên dữ liệu.
+Không ghép lại xã đã có ở cuối địa chỉ.
+
+Công cụ sao chép SQL cũng xuất địa chỉ đầy đủ; đồng bộ cloud chuyển cấu trúc
+trên bản gộp mới trước khi tạo hai bản dữ liệu khớp nhau. Các database nguồn
+của lần đồng bộ vẫn được giữ nguyên.
+
+### Sửa, xóa phiếu cầm đồ và hiển thị lợi nhuận
+
+Tab Thông tin của chi tiết cầm đồ có các nút In hợp đồng, Cập nhật thông tin và
+Xóa phiếu. Xóa yêu cầu xác nhận và xóa cả lịch sử thu gốc/lãi liên quan. Thay đổi
+được ghi theo kế hoạch có thể tiếp tục sau lỗi, kèm bản lưu dữ liệu cũ. Tiền vay
+không được thấp hơn gốc đã thu; phiếu đã thanh toán giữ nguyên khách hàng, ngày vay
+và cách tính lãi để không thay đổi ý nghĩa các khoản thu trước đó.
+
+Báo cáo bán hàng hiển thị lợi nhuận ngay phía trên danh sách. Nếu thiếu dữ liệu,
+báo cáo tổng quan và bán hàng hiển thị lợi nhuận đã xác định và số đơn chưa đủ dữ
+liệu, không coi giá vốn thiếu là 0. Giá nhập xe có thể lấy từ chi tiết phiếu nhập
+liên kết duy nhất khi dòng bán và hồ sơ xe chưa ghi giá nhập.
+
+### In hóa đơn từ xem trước đơn bán hàng
+
+Trong **Xem trước đơn hàng**, chọn **In hóa đơn bán hàng** để xem/in bản nháp hoặc
+**Lưu & in hóa đơn** để ghi nhận đơn và in hóa đơn có mã đơn thực tế. Bản in gồm
+thông tin cửa hàng Toàn Hợp rút gọn, khách hàng và địa chỉ đầy đủ, danh sách hàng
+hóa/dịch vụ, số lượng, đơn giá, thành tiền, giảm giá, thanh toán, tiền thừa và dư nợ.
+Xe có số khung, số máy, biển số sẽ in kèm thông tin đó. Có thể lưu PDF từ màn hình
+xem trước bản in. Đơn nhiều mặt hàng tự chia trang và lặp tiêu đề bảng.
+
+Nếu lỗi tạo bản in sau khi đã lưu, nút In lại dùng mã đơn đã nhận, không lưu đơn
+lần nữa. **In hợp đồng mua bán** tạm khóa và ghi rõ chờ mẫu hợp đồng được cung cấp.

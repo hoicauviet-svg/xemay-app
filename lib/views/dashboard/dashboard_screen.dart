@@ -2,6 +2,8 @@ import '../../models/repositories/database_settings_repository.dart';
 import '../../core/config/database_config.dart';
 import '../settings/app_update_panel.dart';
 import '../settings/settings_tab.dart';
+import '../settings/cloud_sync_reminder_dialog.dart';
+import '../../services/native_database_settings_repository.dart';
 import '../../models/repositories/opening_debt_repository.dart';
 import '../../models/repositories/reports_repository.dart';
 import '../reports/reports_view.dart';
@@ -82,6 +84,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late SalesController _sales;
   StreamSubscription<int>? _databaseSubscription;
   int _databaseRevision = DatabaseConfig.revision;
+  int _initialSettingsTab = 0;
   @override
   void initState() {
     super.initState();
@@ -91,7 +94,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _createSalesController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(checkForUpdateOnLaunch(context));
+      unawaited(_startupNotices());
     });
     _databaseSubscription = DatabaseConfig.changes.listen((revision) {
       if (!mounted) return;
@@ -99,6 +102,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _createSalesController();
       setState(() => _databaseRevision = revision);
     });
+  }
+
+  Future<void> _startupNotices() async {
+    await checkForCloudSyncReminder(
+      context,
+      repository:
+          widget.databaseSettingsRepositoryFactory?.call() ??
+          NativeDatabaseSettingsRepository(),
+      onOpenSettings: () {
+        setState(() => _initialSettingsTab = 2);
+        _selectGroup(DashboardGroup.settings);
+      },
+    );
+    if (mounted) await checkForUpdateOnLaunch(context);
   }
 
   void _createSalesController() {
@@ -176,6 +193,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             )
                           : _GroupTabs(
                               controller: _controller,
+                              initialSettingsTab: _initialSettingsTab,
                               databaseRevision: _databaseRevision,
                               inventoryRepositoryFactory:
                                   widget.inventoryRepositoryFactory,
@@ -336,6 +354,7 @@ class _GroupTabs extends StatelessWidget {
   const _GroupTabs({
     required this.controller,
     this.databaseRevision = 0,
+    this.initialSettingsTab = 0,
     this.inventoryRepositoryFactory,
     this.customerRepositoryFactory,
     this.partnerRepositoryFactory,
@@ -362,6 +381,7 @@ class _GroupTabs extends StatelessWidget {
   databaseSettingsRepositoryFactory;
   final DashboardController controller;
   final int databaseRevision;
+  final int initialSettingsTab;
 
   @override
   Widget build(BuildContext context) {
@@ -370,6 +390,8 @@ class _GroupTabs extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: SettingsTab(
+          key: ValueKey('settings-initial-$initialSettingsTab'),
+          initialTab: initialSettingsTab,
           repository: databaseSettingsRepositoryFactory?.call(),
         ),
       );

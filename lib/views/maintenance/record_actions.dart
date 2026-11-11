@@ -309,7 +309,11 @@ class _RecordEditorState extends State<RecordEditor> {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Xóa phiếu'),
-        content: const Text('Xóa phiếu này và cập nhật các số liệu liên quan?'),
+        content: Text(
+          widget.kind == RecordKind.pawn
+              ? 'Xóa phiếu cầm đồ #${widget.id} và toàn bộ lịch sử thu gốc, thu lãi? Dư nợ và báo cáo sẽ thay đổi. Không thể hoàn tác từ màn hình này.'
+              : 'Xóa phiếu này và cập nhật các số liệu liên quan?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c, false),
@@ -353,6 +357,8 @@ class _RecordEditorState extends State<RecordEditor> {
             ? 'phiếu trả nợ'
             : incoming
             ? 'lô hàng'
+            : widget.kind == RecordKind.pawn
+            ? 'phiếu cầm đồ'
             : widget.kind == RecordKind.cash
             ? 'phiếu thu/chi'
             : 'đơn hàng'}';
@@ -379,6 +385,8 @@ class _RecordEditorState extends State<RecordEditor> {
                                 Text(
                                   isPayment
                                       ? 'Xóa phiếu trả nợ này? Công nợ, lịch sử và khoản thu lãi liên quan sẽ được cập nhật lại.'
+                                      : widget.kind == RecordKind.pawn
+                                      ? 'Xóa phiếu cầm đồ #${widget.id} và toàn bộ lịch sử thu gốc, thu lãi liên quan? Dư nợ và báo cáo cầm đồ sẽ thay đổi. Không thể hoàn tác từ màn hình này.'
                                       : incoming
                                       ? 'Xóa lô hàng #${widget.id}, sản phẩm nhập và các phiếu thanh toán liên quan? Tồn kho sẽ được giảm tương ứng. Lô có xe đã bán hoặc không đủ tồn phụ tùng sẽ không được xóa.'
                                       : 'Xóa đơn hàng #${widget.id} cùng chi tiết và các phiếu thu liên quan? Sản phẩm sẽ được hoàn lại tồn kho.',
@@ -453,6 +461,83 @@ class _RecordEditorState extends State<RecordEditor> {
                                   'Ngày hẹn sau điều chỉnh (nếu cần)',
                                   optional: true,
                                 ),
+                              ],
+                              if (!widget.deleting &&
+                                  !isPayment &&
+                                  widget.kind == RecordKind.pawn) ...[
+                                RecordReferenceField(
+                                  repository: widget.repository,
+                                  collection: 'KhachHang',
+                                  label: 'Khách hàng',
+                                  initialName:
+                                      '${_draft['_CustomerName'] ?? ''}',
+                                  initialId: _draft['IdKhachHang'],
+                                  enabled: !_saving && !_locked,
+                                  onSelected: (id) =>
+                                      _draft['IdKhachHang'] = id,
+                                ),
+                                const SizedBox(height: 16),
+                                input('TaiSanTheChap', 'Tài sản thế chấp'),
+                                const SizedBox(height: 16),
+                                input(
+                                  'SoTienVay',
+                                  'Số tiền vay',
+                                  numeric: true,
+                                ),
+                                const SizedBox(height: 16),
+                                date('NgayVay', 'Ngày vay'),
+                                const SizedBox(height: 16),
+                                date('NgayHan', 'Ngày hạn'),
+                                const SizedBox(height: 16),
+                                DropdownButtonFormField<bool>(
+                                  initialValue: _draft['NgayPhanTram'] as bool?,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Kiểu lãi',
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: true,
+                                      child: Text('Tiền/triệu/ngày'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: false,
+                                      child: Text('%/tháng'),
+                                    ),
+                                  ],
+                                  onChanged: _saving || _locked
+                                      ? null
+                                      : (value) =>
+                                            _draft['NgayPhanTram'] = value,
+                                ),
+                                const SizedBox(height: 16),
+                                TextFormField(
+                                  initialValue: '${_draft['LaiSuat'] ?? ''}',
+                                  enabled: !_saving && !_locked,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Lãi suất',
+                                  ),
+                                  validator: (v) {
+                                    final n = num.tryParse(
+                                      (v ?? '').replaceAll(',', '.'),
+                                    );
+                                    return n == null || !n.isFinite || n < 0
+                                        ? 'Nhập lãi suất không âm hợp lệ'
+                                        : null;
+                                  },
+                                  onChanged: (v) => _draft['LaiSuat'] =
+                                      num.tryParse(v.replaceAll(',', '.')),
+                                ),
+                                const SizedBox(height: 16),
+                                CheckboxListTile(
+                                  title: const Text('Đã chuộc / tất toán'),
+                                  value: _draft['TrangThai'] == true,
+                                  onChanged: _saving || _locked
+                                      ? null
+                                      : (value) => setState(
+                                          () => _draft['TrangThai'] = value,
+                                        ),
+                                ),
+                                input('GhiChu', 'Ghi chú'),
                               ],
                               if (!widget.deleting &&
                                   !isPayment &&

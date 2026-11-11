@@ -21,7 +21,6 @@ Future<void> main() async {
     final next = await live.fetch(page: 1);
     final ids = page.rows.map((r) => r['IdKH']).toSet();
     check(next.rows.every((r) => !ids.contains(r['IdKH'])), 'Pages overlap');
-    check((await live.localities()).isNotEmpty, 'Missing localities');
     await db.open();
     await db.collection('Xa').insertOne({'IdXa': 1, 'TenXa': 'Xã kiểm thử'});
     final draft = CustomerDraft()

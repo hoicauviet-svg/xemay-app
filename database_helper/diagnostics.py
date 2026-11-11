@@ -60,7 +60,7 @@ def record_error(error, request, path=None):
             details.extend(traceback.format_exception(type(current), current, current.__traceback__, chain=False))
             current = current.__cause__ or current.__context__
         command = request.get('command', 'unknown')
-        if command not in ('probeSql', 'probeMongo', 'clone', 'checkSqlDriver', 'syncCloud'):
+        if command not in ('probeSql', 'probeMongo', 'clone', 'checkSqlDriver', 'syncCloud', 'compareCloud'):
             command = 'unknown'
         entry = {
             'time': datetime.now(timezone.utc).isoformat(),

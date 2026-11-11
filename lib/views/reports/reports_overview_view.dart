@@ -47,7 +47,7 @@ class ReportsOverviewView extends StatelessWidget {
         Flexible(
           child: Text(
             metric.$2 == null
-                ? ''
+                ? 'Chưa đủ dữ liệu'
                 : metric.$3
                 ? money(metric.$2)
                 : quantity(metric.$2!),
@@ -158,7 +158,17 @@ class ReportsOverviewView extends StatelessWidget {
           ('Số đơn', sales['Số đơn'], false),
           ('Doanh thu', sales['Doanh thu'], true),
           ('Giá vốn', _sum([sales['Giá nhập'], sales['Chi phí']]), true),
-          ('Lợi nhuận', sales['Lợi nhuận'], true),
+          (
+            sales['Lợi nhuận'] == null ? 'Lợi nhuận đã xác định' : 'Lợi nhuận',
+            sales['Lợi nhuận'] ?? sales['Lợi nhuận đã xác định'],
+            true,
+          ),
+          if ((sales['Đơn thiếu lợi nhuận'] ?? 0) > 0)
+            (
+              'Đơn chưa xác định lợi nhuận',
+              sales['Đơn thiếu lợi nhuận'],
+              false,
+            ),
         ],
         details: [
           for (final group in groups)

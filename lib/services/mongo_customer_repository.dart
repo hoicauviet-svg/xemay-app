@@ -1,3 +1,4 @@
+import 'customer_address_migration.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import '../core/config/database_config.dart';
 import '../models/customers/customer_models.dart';
@@ -7,18 +8,17 @@ class MongoCustomerRepository implements CustomerRepository {
   MongoCustomerRepository({String? uri})
     : _db = Db(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
+  bool _addressesReady = false;
   Future<void>? _opening;
   Future<void> _connect() => _opening ??= _open().whenComplete(() {
     _opening = null;
   });
   Future<void> _open() async {
     if (!_db.isConnected) await _db.open();
-  }
-
-  @override
-  Future<List<Map<String, dynamic>>> localities() async {
-    await _connect();
-    return _db.collection('Xa').modernFind(sort: {'TenXa': 1}).toList();
+    if (!_addressesReady) {
+      await migrateCustomerAddresses(_db);
+      _addressesReady = true;
+    }
   }
 
   @override
@@ -35,13 +35,14 @@ class MongoCustomerRepository implements CustomerRepository {
     final term = search.trim();
     if (term.isNotEmpty) {
       final regex = {r'$regex': RegExp.escape(term), r'$options': 'i'};
-      final places = await _db.collection('Xa').find({'TenXa': regex}).toList();
       filter[r'$or'] = [
-        if (places.isNotEmpty)
-          {
-            'IdXa': {r'$in': places.map((x) => x['IdXa']).toList()},
-          },
-        for (final f in ['TenKhachHang', 'SoDienThoai', 'DiaChiChiTiet'])
+        for (final f in [
+          'TenKhachHang',
+          'SoDienThoai',
+          'DiaChiChiTiet',
+          'SoCCCD',
+          'SoCMND',
+        ])
           {f: regex},
         if (int.tryParse(term) != null) {'IdKH': int.parse(term)},
       ];
@@ -63,24 +64,8 @@ class MongoCustomerRepository implements CustomerRepository {
           limit: 30,
         )
         .toList();
-    final localityIds = rows
-        .map((r) => r['IdXa'])
-        .whereType<int>()
-        .toSet()
-        .toList();
-    final localities = localityIds.isEmpty
-        ? <Map<String, dynamic>>[]
-        : await _db.collection('Xa').find({
-            'IdXa': {r'$in': localityIds},
-          }).toList();
-    final names = {
-      for (final place in localities) place['IdXa']: place['TenXa'],
-    };
     for (final row in rows) {
-      row['DiaChiHienThi'] = [
-        row['DiaChiChiTiet'],
-        names[row['IdXa']],
-      ].where((v) => v != null && v.toString().trim().isNotEmpty).join(', ');
+      row['DiaChiHienThi'] = row['DiaChiChiTiet'] ?? '';
     }
     return CustomerPage(rows, total);
   }
@@ -94,13 +79,7 @@ class MongoCustomerRepository implements CustomerRepository {
       'AnKhoiDanhSachKhachHang': {r'$ne': true},
     });
     if (row == null) return null;
-    final place = row['IdXa'] == null
-        ? null
-        : await _db.collection('Xa').findOne({'IdXa': row['IdXa']});
-    row['DiaChiHienThi'] = [
-      row['DiaChiChiTiet'],
-      place?['TenXa'],
-    ].where((v) => v != null && v.toString().trim().isNotEmpty).join(', ');
+    row['DiaChiHienThi'] = row['DiaChiChiTiet'] ?? '';
     return row;
   }
 
@@ -172,6 +151,7 @@ class MongoCustomerRepository implements CustomerRepository {
     if (draft.name.trim().isEmpty) {
       throw const CustomerException('Vui lòng nhập tên khách hàng.');
     }
+    final identity = draft.identityFields();
     await _connect();
     final last = await _db
         .collection('KhachHang')
@@ -199,6 +179,7 @@ class MongoCustomerRepository implements CustomerRepository {
       'TenKhachHang': draft.name.trim(),
       'SoDienThoai': draft.phone.trim(),
       'DiaChiChiTiet': draft.address.trim(),
+      ...identity,
       'NgayTao': DateTime.now().toUtc(),
     };
     final result = await _db.collection('KhachHang').insertOne(row);
@@ -213,6 +194,7 @@ class MongoCustomerRepository implements CustomerRepository {
     if (draft.name.trim().isEmpty) {
       throw const CustomerException('Vui lòng nhập tên khách hàng.');
     }
+    final identity = draft.identityFields();
     await _connect();
     final row = await _db
         .collection('KhachHang')
@@ -227,6 +209,7 @@ class MongoCustomerRepository implements CustomerRepository {
               'TenKhachHang': draft.name.trim(),
               'SoDienThoai': draft.phone.trim(),
               'DiaChiChiTiet': draft.address.trim(),
+              ...identity,
               'NgayCapNhat': DateTime.now().toUtc(),
             },
             r'$unset': {'IdXa': ''},
@@ -298,8 +281,6 @@ class MongoCustomerRepository implements CustomerRepository {
   @override
   Future<List<Map<String, dynamic>>> mergeCandidates() async {
     await _connect();
-    final places = await localities();
-    final names = {for (final row in places) row['IdXa']: row['TenXa']};
     final rows = await _db
         .collection('KhachHang')
         .modernFind(
@@ -312,15 +293,11 @@ class MongoCustomerRepository implements CustomerRepository {
             'TenKhachHang': 1,
             'SoDienThoai': 1,
             'DiaChiChiTiet': 1,
-            'IdXa': 1,
           },
         )
         .toList();
     for (final row in rows) {
-      row['DiaChiHienThi'] = [
-        row['DiaChiChiTiet'],
-        names[row['IdXa']],
-      ].where((v) => v != null && v.toString().trim().isNotEmpty).join(', ');
+      row['DiaChiHienThi'] = row['DiaChiChiTiet'] ?? '';
     }
     return rows;
   }

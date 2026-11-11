@@ -10,13 +10,8 @@ class FakeCustomerRepository implements CustomerRepository {
       'IdKH': 1,
       'TenKhachHang': 'Khách kiểm thử',
       'SoDienThoai': '0900000001',
-      'IdXa': 1,
-      'DiaChiChiTiet': 'Thôn 1',
+      'DiaChiChiTiet': 'Thôn 1, Xã kiểm thử',
     },
-  ];
-  @override
-  Future<List<Map<String, dynamic>>> localities() async => [
-    {'IdXa': 1, 'TenXa': 'Xã kiểm thử'},
   ];
   @override
   Future<CustomerPage> fetch({
@@ -32,7 +27,6 @@ class FakeCustomerRepository implements CustomerRepository {
     for (final row in found) {
       row['DiaChiHienThi'] = [
         row['DiaChiChiTiet'],
-        if (row['IdXa'] == 1) 'Xã kiểm thử',
       ].where((v) => v != null && v.toString().trim().isNotEmpty).join(', ');
     }
     return CustomerPage(found, found.length);
@@ -73,6 +67,7 @@ class FakeCustomerRepository implements CustomerRepository {
       'TenKhachHang': draft.name,
       'SoDienThoai': draft.phone,
       'DiaChiChiTiet': draft.address,
+      ...draft.identityFields(),
     };
     rows.add(row);
     return {...row, 'DiaChiHienThi': draft.address.trim()};
@@ -86,6 +81,7 @@ class FakeCustomerRepository implements CustomerRepository {
       'TenKhachHang': draft.name,
       'SoDienThoai': draft.phone,
       'DiaChiChiTiet': draft.address,
+      ...draft.identityFields(),
     });
     r.remove('IdXa');
     return r;

@@ -1,4 +1,5 @@
 """Pure, audited XM transformations. Input and original MongoDB are never mutated."""
+from customer_addresses import flatten_rows
 import copy
 import math
 from datetime import datetime, timezone
@@ -42,11 +43,12 @@ def orphan_cleanup(rows, metadata):
 
 def normalize(raw, metadata, progress=lambda message: None):
     rows=copy.deepcopy(raw)
+    flatten_rows(rows)
     removed=orphan_cleanup(rows,metadata)
     progress(f'Đã dọn {len(removed)} bản ghi thiếu bản ghi cha')
     if 'SanPham' in rows or 'ChiTietHoaDonBan' in rows:
         raise ValueError('Nguồn SQL đã có cấu trúc chuyển đổi khác; cần đối chiếu trước khi sao chép.')
-    for name in ['Xe','XeMoi','XeCu','HoaDonBan','HoaDonMua','NhapHang','KhachHang','Xa','SoNo','TraNo','NoCu']:
+    for name in ['Xe','XeMoi','XeCu','HoaDonBan','HoaDonMua','NhapHang','KhachHang','SoNo','TraNo','NoCu']:
         rows.setdefault(name,{})
     new={r['IdXe'] for r in rows['XeMoi'].values()}
     used={r['IdXe'] for r in rows['XeCu'].values()}
@@ -81,7 +83,6 @@ def normalize(raw, metadata, progress=lambda message: None):
                     'Nguon':'NhapHang.'+source,'NgayTao':now,'CanBoSungThongTin':True}
             row[ref]=names[value]
     customers={r['IdKH']:r for r in rows['KhachHang'].values()}
-    places={r['IdXa']:r.get('TenXa','') for r in rows['Xa'].values()}
     sellers={r['IdKh'] for r in rows['HoaDonMua'].values()}
     roles={str(r.get(field)).strip() for name,field in [('HoaDonBan','IdKH'),('CamDo','IdKhachHang'),('NoCu','IdKH')]
            for r in rows.get(name,{}).values()}
@@ -89,7 +90,7 @@ def normalize(raw, metadata, progress=lambda message: None):
         customer=customers[key]; oid=str(ObjectId())
         rows['DoiTac'][oid]={'_id':oid,'TenDoiTac':(customer.get('TenKhachHang') or '').strip() or f'Người bán #{key}',
             'SoDienThoai':customer.get('SoDienThoai') or '',
-            'DiaChi':', '.join(str(v).strip() for v in [customer.get('DiaChiChiTiet'),places.get(customer.get('IdXa'))] if v is not None and str(v).strip()),
+            'DiaChi':customer.get('DiaChiChiTiet') or '',
             'MaSoThue':'','NguoiDaiDien':'','GhiChu':'','IdKhachHangNguon':key,'Nguon':'HoaDonMua.IdKh','NgayTao':now}
         customer.update(IdDoiTac=oid,AnKhoiDanhSachKhachHang=str(key) not in roles)
         for purchase in rows['HoaDonMua'].values():

@@ -25,6 +25,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+MinVersion=10.0
 CloseApplications=yes
 RestartApplications=no
 UsePreviousAppDir=yes

@@ -1,4 +1,5 @@
 import 'package:xemay_app/core/config/database_config.dart';
+import 'package:xemay_app/models/settings/database_settings.dart';
 import 'support/fake_batch_repository.dart';
 import 'support/fake_directory_repository.dart';
 import 'support/fake_database_settings_repository.dart';
@@ -11,6 +12,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xemay_app/app.dart';
 
 void main() {
+  testWidgets('startup reminds after thirty days and opens the cloud tab', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = FakeDatabaseSettingsRepository()
+      ..settings = DatabaseSettings(
+        mongoUri: 'mongodb://local/XM',
+        cloudUri: 'mongodb://cloud/XM',
+        lastSyncAt: DateTime.now().subtract(const Duration(days: 31)),
+      );
+    await tester.pumpWidget(
+      StoreApp(
+        databaseSettingsRepositoryFactory: () => repo,
+        salesRepositoryFactory: FakeSalesRepository.new,
+        inventoryRepositoryFactory: FakeInventoryRepository.new,
+        serviceRepositoryFactory: FakeServiceRepository.new,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Đã đến lúc đồng bộ dữ liệu'), findsOneWidget);
+    await tester.tap(find.text('Mở đồng bộ cloud'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('settings-cloud-uri')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('changing saved Mongo connection reloads active repositories', (
     tester,
   ) async {

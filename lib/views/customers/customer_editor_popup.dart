@@ -31,6 +31,10 @@ class _CustomerEditorPopupState extends State<CustomerEditorPopup> {
     if (row != null) {
       _draft.name = '${row['TenKhachHang'] ?? ''}';
       _draft.phone = '${row['SoDienThoai'] ?? ''}';
+      _draft.cccd = '${row['SoCCCD'] ?? ''}';
+      _draft.cmnd = '${row['SoCMND'] ?? ''}';
+      _draft.issueDate = CustomerDraft.formatIssueDate(row['NgayCap']);
+      _draft.issuePlace = '${row['NoiCap'] ?? ''}';
       _draft.address = '${row['DiaChiHienThi'] ?? row['DiaChiChiTiet'] ?? ''}';
     }
   }
@@ -108,6 +112,46 @@ class _CustomerEditorPopupState extends State<CustomerEditorPopup> {
                           ),
                           keyboardType: TextInputType.phone,
                           onChanged: (v) => _draft.phone = v,
+                        ),
+                        TextFormField(
+                          key: const ValueKey('customer-cccd'),
+                          initialValue: _draft.cccd,
+                          enabled: !_saving,
+                          decoration: const InputDecoration(
+                            labelText: 'Số CCCD',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (v) => _draft.cccd = v,
+                        ),
+                        TextFormField(
+                          key: const ValueKey('customer-cmnd'),
+                          initialValue: _draft.cmnd,
+                          enabled: !_saving,
+                          decoration: const InputDecoration(
+                            labelText: 'Số CMND',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (v) => _draft.cmnd = v,
+                        ),
+                        TextFormField(
+                          key: const ValueKey('customer-issue-date'),
+                          initialValue: _draft.issueDate,
+                          enabled: !_saving,
+                          decoration: const InputDecoration(
+                            labelText: 'Ngày cấp',
+                            hintText: 'dd/MM/yyyy',
+                          ),
+                          validator: _draft.validateIssueDate,
+                          onChanged: (v) => _draft.issueDate = v,
+                        ),
+                        TextFormField(
+                          key: const ValueKey('customer-issue-place'),
+                          initialValue: _draft.issuePlace,
+                          enabled: !_saving,
+                          decoration: const InputDecoration(
+                            labelText: 'Nơi cấp',
+                          ),
+                          onChanged: (v) => _draft.issuePlace = v,
                         ),
                         TextFormField(
                           key: const ValueKey('customer-address'),

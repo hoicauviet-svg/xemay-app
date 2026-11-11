@@ -1,7 +1,6 @@
 import '../customers/customer_models.dart';
 
 abstract class CustomerRepository {
-  Future<List<Map<String, dynamic>>> localities();
   Future<CustomerPage> fetch({
     String search = '',
     String phoneFilter = 'all',

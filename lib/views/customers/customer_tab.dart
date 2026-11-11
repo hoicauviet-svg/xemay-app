@@ -347,7 +347,7 @@ class _CustomerTabState extends State<CustomerTab>
     }
     return LayoutBuilder(
       builder: (context, bounds) {
-        if (bounds.maxWidth < 650) {
+        if (bounds.maxWidth < 900) {
           return ListView.separated(
             itemCount: rows.length,
             separatorBuilder: (_, _) => const Divider(),
@@ -369,11 +369,15 @@ class _CustomerTabState extends State<CustomerTab>
         return ScrollableDataTable(
           fixedHeader: true,
           fitWidth: true,
-          columnWidths: const [100, 220, 160, 300, 112],
+          columnWidths: const [90, 200, 150, 145, 125, 115, 150, 240, 180],
           columns: const [
             DataColumn(label: Text('MÃ KH')),
             DataColumn(label: Text('TÊN KHÁCH HÀNG')),
             DataColumn(label: Text('SỐ ĐIỆN THOẠI')),
+            DataColumn(label: Text('CCCD')),
+            DataColumn(label: Text('CMND')),
+            DataColumn(label: Text('NGÀY CẤP')),
+            DataColumn(label: Text('NƠI CẤP')),
             DataColumn(label: Text('ĐỊA CHỈ')),
             DataColumn(label: Text('')),
           ],
@@ -385,6 +389,10 @@ class _CustomerTabState extends State<CustomerTab>
                   DataCell(Text('#${row['IdKH']}')),
                   DataCell(Text(_value(row['TenKhachHang']))),
                   DataCell(Text(_value(row['SoDienThoai']))),
+                  DataCell(Text(_value(row['SoCCCD']))),
+                  DataCell(Text(_value(row['SoCMND']))),
+                  DataCell(Text(CustomerDraft.formatIssueDate(row['NgayCap']))),
+                  DataCell(Text(_value(row['NoiCap']))),
                   DataCell(Text(_value(_controller.address(row)))),
                   DataCell(_actions(row)),
                 ],

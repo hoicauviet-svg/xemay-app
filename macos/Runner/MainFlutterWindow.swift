@@ -5,6 +5,10 @@ import Security
 class MainFlutterWindow: NSWindow {
   private var databaseChannel: FlutterMethodChannel?
   private let settingsService = "vn.cuahang.xemayApp.database-settings"
+  // The startup flow, reminder and Settings share one session. Read Keychain
+  // once successfully; repeated reads can otherwise repeat macOS permission UI.
+  private var settingsLoaded = false
+  private var cachedSettings: String?
 
   private func keychainQuery() -> [String: Any] {
     [kSecClass as String: kSecClassGenericPassword,
@@ -15,18 +19,35 @@ class MainFlutterWindow: NSWindow {
   private func databaseCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "load":
+      if settingsLoaded {
+        result(cachedSettings)
+        return
+      }
       var query = keychainQuery()
       query[kSecReturnData as String] = true
       query[kSecMatchLimit as String] = kSecMatchLimitOne
       var item: CFTypeRef?
       let status = SecItemCopyMatching(query as CFDictionary, &item)
-      if status == errSecItemNotFound { result(nil) }
-      else if status == errSecSuccess, let data = item as? Data { result(String(data: data, encoding: .utf8)) }
+      if status == errSecItemNotFound {
+        cachedSettings = nil
+        settingsLoaded = true
+        result(nil)
+      }
+      else if status == errSecSuccess, let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) {
+        cachedSettings = value
+        settingsLoaded = true
+        result(value)
+      }
       else { result(FlutterError(code: "keychain_read", message: "Chưa đọc được cấu hình kết nối đã lưu.", details: nil)) }
     case "save":
       guard let args = call.arguments as? [String: Any], let value = args["value"] as? String,
             let data = value.data(using: .utf8), data.count < 65536 else {
         result(FlutterError(code: "invalid_settings", message: "Cấu hình kết nối không hợp lệ.", details: nil)); return
+      }
+      if settingsLoaded && cachedSettings == value {
+        result(nil)
+        return
       }
       let query = keychainQuery()
       var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
@@ -36,7 +57,11 @@ class MainFlutterWindow: NSWindow {
         entry[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         status = SecItemAdd(entry as CFDictionary, nil)
       }
-      if status == errSecSuccess { result(nil) }
+      if status == errSecSuccess {
+        cachedSettings = value
+        settingsLoaded = true
+        result(nil)
+      }
       else { result(FlutterError(code: "keychain_write", message: "Chưa lưu được cấu hình vào Keychain của máy.", details: nil)) }
     case "supportDirectory":
       do {

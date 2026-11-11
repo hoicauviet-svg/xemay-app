@@ -60,8 +60,15 @@ def sql_connection(value):
     if database.lower()!='xm':raise ValueError('Chuỗi SQL Server phải trỏ tới database xm.')
     driver=pick('driver')
     if driver and not re.fullmatch(r'ODBC Driver (17|18) for SQL Server',driver):raise ValueError('Driver SQL Server không được hỗ trợ.')
+    def boolean_option(value, name, encryption=False):
+        normalized=value.strip().lower()
+        if normalized in ('true','yes','1'):return 'yes'
+        if normalized in ('false','no','0'):return 'no'
+        if encryption and normalized in ('mandatory','optional','strict'):return normalized
+        raise ValueError(name+' phải là yes/no hoặc True/False.')
     result={'Server':host,'Database':database,
-        'Encrypt':pick('encrypt',default='yes'),'TrustServerCertificate':pick('trustservercertificate',default='no'),
+        'Encrypt':boolean_option(pick('encrypt',default='yes'),'Encrypt',encryption=True),
+        'TrustServerCertificate':boolean_option(pick('trustservercertificate',default='no'),'TrustServerCertificate'),
         'ApplicationIntent':'ReadOnly'}
     if windows:
         result['Trusted_Connection']='yes'

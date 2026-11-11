@@ -1,3 +1,4 @@
+import 'customer_address_migration.dart';
 import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -14,12 +15,17 @@ class MongoOrderRepository implements OrderRepository {
        _today = today ?? DateTime.now;
   final DateTime Function() _today;
   final Db _db;
+  bool _addressesReady = false;
   @override
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, _connect);
 
   final Future<void> Function(String)? checkpoint;
   Future<void> _connect() async {
     if (!_db.isConnected) await _db.open(writeConcern: WriteConcern.journaled);
+    if (!_addressesReady) {
+      await migrateCustomerAddresses(_db);
+      _addressesReady = true;
+    }
   }
 
   Future<void> _checked(Future<dynamic> operation) async {
@@ -123,14 +129,8 @@ class MongoOrderRepository implements OrderRepository {
     final customer = header['IdKH'] == null
         ? null
         : await _db.collection('KhachHang').findOne({'IdKH': header['IdKH']});
-    if (customer != null && customer['IdXa'] != null) {
-      final locality = await _db.collection('Xa').findOne({
-        'IdXa': customer['IdXa'],
-      });
-      customer['DiaChiHienThi'] = [
-        customer['DiaChiChiTiet'],
-        locality?['TenXa'],
-      ].where((v) => v != null && '$v'.trim().isNotEmpty).join(', ');
+    if (customer != null) {
+      customer['DiaChiHienThi'] = customer['DiaChiChiTiet'] ?? '';
     }
     final lines = await _db
         .collection('ChiTietHoaDonBan')

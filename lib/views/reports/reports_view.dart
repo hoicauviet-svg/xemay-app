@@ -567,6 +567,15 @@ class _ReportsViewState extends State<ReportsView>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (kind == ReportKind.sales)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                '${section.totals['Lợi nhuận'] == null ? 'Lợi nhuận đã xác định' : 'Lợi nhuận'}: ${section.totals['Lợi nhuận'] == null && section.totals['Lợi nhuận đã xác định'] == null ? 'Chưa đủ dữ liệu giá vốn / chi phí' : money(section.totals['Lợi nhuận'] ?? section.totals['Lợi nhuận đã xác định'])}${(section.totals['Đơn thiếu lợi nhuận'] ?? 0) > 0 ? ' · ${section.totals['Đơn thiếu lợi nhuận']} đơn chưa đủ dữ liệu' : ''}',
+                key: const ValueKey('sales-profit-summary'),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
           Expanded(
             child: LayoutBuilder(
               builder: (context, bounds) {

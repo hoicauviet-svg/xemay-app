@@ -1,3 +1,4 @@
+import '../models/pawn/pawn_models.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import '../models/maintenance/record_maintenance.dart';
 import '../core/config/database_config.dart';
@@ -175,8 +176,11 @@ class MongoRecordMaintenance implements RecordMaintenance {
         }
       }
     }
-    final customer = kind == RecordKind.order && h['IdKH'] != null
-        ? await db.collection('KhachHang').findOne({'IdKH': h['IdKH']})
+    final customerId = kind == RecordKind.pawn ? h['IdKhachHang'] : h['IdKH'];
+    final customer =
+        (kind == RecordKind.order || kind == RecordKind.pawn) &&
+            customerId != null
+        ? await db.collection('KhachHang').findOne({'IdKH': customerId})
         : null;
     final categories = <String, CashCategory>{
       for (final c in CashCategory.defaults) c.id: c,
@@ -890,6 +894,63 @@ class MongoRecordMaintenance implements RecordMaintenance {
         }),
       ];
     }
+    if (kind == RecordKind.pawn) {
+      final draft = PawnDraft()
+        ..customerId = (fields['IdKhachHang'] as num?)?.toInt()
+        ..asset = '${fields['TaiSanTheChap'] ?? ''}'
+        ..amount = '${fields['SoTienVay'] ?? ''}'.replaceFirst(
+          RegExp(r'\.0$'),
+          '',
+        )
+        ..rate = '${fields['LaiSuat'] ?? ''}'
+        ..notes = '${fields['GhiChu'] ?? ''}'
+        ..daily = fields['NgayPhanTram'] == true
+        ..closed = fields['TrangThai'] == true;
+      if (fields['NgayVay'] is! DateTime ||
+          fields['NgayHan'] is! DateTime ||
+          fields['NgayPhanTram'] is! bool)
+        fail('Chọn ngày vay, ngày hạn và kiểu lãi.');
+      draft.loanDate = fields['NgayVay'];
+      draft.dueDate = fields['NgayHan'];
+      final error = draft.validate();
+      if (error != null) fail(error);
+      final customer = await db.collection('KhachHang').findOne({
+        'IdKH': draft.customerId,
+        'DaXoa': {r'$ne': true},
+      });
+      if (customer == null && draft.customerId != data.header['IdKhachHang'])
+        fail('Khách hàng không còn tồn tại.');
+      final principal = num.parse(draft.amount);
+      final paid = data.payments.fold<num>(
+        0,
+        (sum, p) => sum + number(p['TienGoc']),
+      );
+      if (principal < paid) fail('Tiền vay không được thấp hơn gốc đã thu.');
+      if (data.payments.any(
+        (p) =>
+            p['NgayTra'] is DateTime &&
+            day(p['NgayTra']).isBefore(day(draft.loanDate)),
+      ))
+        fail('Ngày vay không được sau ngày đã thanh toán.');
+      // Existing interest collections cannot be reinterpreted by changing their contract.
+      if (data.payments.isNotEmpty &&
+          (draft.customerId != data.header['IdKhachHang'] ||
+              draft.daily != data.header['NgayPhanTram'] ||
+              draft.interestRate != data.header['LaiSuat'] ||
+              day(draft.loanDate) != day(data.header['NgayVay'])))
+        fail(
+          'Phiếu đã có thanh toán: giữ nguyên khách hàng, ngày vay và cách tính lãi.',
+        );
+      if (draft.closed && paid < principal && data.header['TrangThai'] != true)
+        fail('Chưa thu đủ gốc để đánh dấu đã chuộc.');
+      return [
+        op('CamDo', data.header['_id'], {
+          ...draft.toFields(),
+          'TrangThai': paid == principal || draft.closed,
+          'NgayCapNhat': DateTime.now().toUtc(),
+        }),
+      ];
+    }
     if (kind != RecordKind.order && kind != RecordKind.batch) {
       fail('Loại phiếu chưa hỗ trợ sửa thông tin.');
     }
@@ -1047,6 +1108,13 @@ class MongoRecordMaintenance implements RecordMaintenance {
           'Phiếu tự sinh: xóa tại sản phẩm hoặc phiếu trả nợ gốc để đồng bộ số liệu.',
         );
       return [op('ThuChiKhac', data.header['_id'], null)];
+    }
+    if (kind == RecordKind.pawn) {
+      return [
+        for (final payment in data.payments)
+          op('TraNoCamDo', payment['_id'], null),
+        op('CamDo', data.header['_id'], null),
+      ];
     }
     if (kind != RecordKind.order && kind != RecordKind.batch) {
       fail('Loại phiếu chưa hỗ trợ xóa.');

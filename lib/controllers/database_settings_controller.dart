@@ -5,22 +5,57 @@ import '../models/repositories/database_settings_repository.dart';
 import '../models/settings/database_settings.dart';
 import 'cart_controller.dart';
 
+enum SettingsSection { mongo, sql, cloud }
+
 class DatabaseSettingsController extends ChangeNotifier {
-  DatabaseSettingsController(this.repository);
+  DatabaseSettingsController(this.repository, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+  final DateTime Function() _now;
   final DatabaseSettingsRepository repository;
   DatabaseSettings settings = DatabaseSettings(
     mongoUri: DatabaseConfig.mongoUri,
   );
   MongoInstallationStatus? mongo, cloud;
+  CloudComparison? comparison;
+  bool? _comparisonUpload;
   DatabaseCloneResult? cloneResult;
   bool busy = false, loaded = false, _disposed = false;
-  String? error, message;
-  final List<String> progress = [];
+  SettingsSection _operationSection = SettingsSection.mongo;
+  final Map<SettingsSection, String> _errors = {}, _messages = {};
+  final Map<SettingsSection, List<String>> _progress = {};
+  String? errorFor(SettingsSection section) => _errors[section];
+  String? messageFor(SettingsSection section) => _messages[section];
+  bool busyFor(SettingsSection section) => busy && _operationSection == section;
+  String? get error => errorFor(_operationSection);
+  set error(String? value) {
+    if (value == null) {
+      _errors.remove(_operationSection);
+    } else {
+      _errors[_operationSection] = value;
+    }
+  }
+
+  String? get message => messageFor(_operationSection);
+  set message(String? value) {
+    if (value == null) {
+      _messages.remove(_operationSection);
+    } else {
+      _messages[_operationSection] = value;
+    }
+  }
+
+  List<String> progressFor(SettingsSection section) =>
+      _progress.putIfAbsent(section, () => []);
+  List<String> get progress => progressFor(_operationSection);
   String _cloneConnection = '';
 
-  Future<void> _perform(Future<void> Function() work) async {
+  Future<void> _perform(
+    SettingsSection section,
+    Future<void> Function() work,
+  ) async {
     if (busy || _disposed) return;
     busy = true;
+    _operationSection = section;
     error = null;
     message = null;
     notifyListeners();
@@ -36,7 +71,7 @@ class DatabaseSettingsController extends ChangeNotifier {
     }
   }
 
-  Future<void> load() => _perform(() async {
+  Future<void> load() => _perform(SettingsSection.mongo, () async {
     settings = await repository.load();
     loaded = true;
     mongo = await repository.checkMongo(settings.mongoUri);
@@ -51,12 +86,15 @@ class DatabaseSettingsController extends ChangeNotifier {
     }
   }
 
-  Future<void> checkMongo(String uri) => _perform(() async {
-    _validateMongo(uri);
-    mongo = await repository.checkMongo(uri.trim());
-    message = mongo!.connected ? 'Kết nối MongoDB thành công.' : null;
-  });
-  Future<void> saveMongo(String uri) => _perform(() async {
+  Future<void> checkMongo(String uri) =>
+      _perform(SettingsSection.mongo, () async {
+        _validateMongo(uri);
+        mongo = await repository.checkMongo(uri.trim());
+        message = mongo!.connected ? 'Kết nối MongoDB thành công.' : null;
+      });
+  Future<void> saveMongo(
+    String uri,
+  ) => _perform(SettingsSection.mongo, () async {
     uri = uri.trim();
     _validateMongo(uri);
     _checkSwitch(uri);
@@ -66,36 +104,31 @@ class DatabaseSettingsController extends ChangeNotifier {
         'Chưa kết nối được MongoDB. Kiểm tra dịch vụ và chuỗi kết nối trước khi lưu.',
       );
     }
-    final next = DatabaseSettings(
-      mongoUri: uri,
-      sqlConnection: settings.sqlConnection,
-      cloudUri: settings.cloudUri,
-    );
+    final next = settings.copyWith(mongoUri: uri);
     await repository.save(next);
     settings = next;
+    comparison = null;
     message = 'Đã lưu kết nối MongoDB.';
   });
   Future<void> checkSql(
     String connection, {
     bool save = false,
-  }) => _perform(() async {
+  }) => _perform(SettingsSection.sql, () async {
     if (connection.trim().isEmpty) {
       throw const DatabaseSettingsException('Nhập chuỗi kết nối SQL Server.');
     }
     final count = await repository.checkSql(connection.trim());
     if (save) {
-      final next = DatabaseSettings(
-        mongoUri: settings.mongoUri,
-        sqlConnection: connection.trim(),
-        cloudUri: settings.cloudUri,
-      );
+      final next = settings.copyWith(sqlConnection: connection.trim());
       await repository.save(next);
       settings = next;
     }
     message =
         '${save ? 'Đã lưu. ' : ''}Kết nối database xm thành công: $count bảng.';
   });
-  Future<void> clone(String connection) => _perform(() async {
+  Future<void> clone(
+    String connection,
+  ) => _perform(SettingsSection.sql, () async {
     if (connection.trim().isEmpty) {
       throw const DatabaseSettingsException('Nhập chuỗi kết nối SQL Server.');
     }
@@ -116,7 +149,7 @@ class DatabaseSettingsController extends ChangeNotifier {
     message =
         'Sao chép thành công ${cloneResult!.rows} dòng; đã kiểm tra và sửa cấu trúc dữ liệu.';
   });
-  Future<void> useClone() => _perform(() async {
+  Future<void> useClone() => _perform(SettingsSection.sql, () async {
     final result = cloneResult;
     if (result == null) return;
     _checkSwitch(result.mongoUri);
@@ -126,10 +159,9 @@ class DatabaseSettingsController extends ChangeNotifier {
         'Chưa kết nối được bản sao. Hãy kiểm tra MongoDB trước khi chuyển dữ liệu.',
       );
     }
-    final next = DatabaseSettings(
+    final next = settings.copyWith(
       mongoUri: result.mongoUri,
       sqlConnection: _cloneConnection,
-      cloudUri: settings.cloudUri,
     );
     await repository.save(next);
     settings = next;
@@ -138,7 +170,7 @@ class DatabaseSettingsController extends ChangeNotifier {
   Future<void> checkCloud(
     String uri, {
     bool save = false,
-  }) => _perform(() async {
+  }) => _perform(SettingsSection.cloud, () async {
     uri = uri.trim();
     _validateMongo(uri);
     cloud = await repository.checkMongo(uri);
@@ -148,20 +180,17 @@ class DatabaseSettingsController extends ChangeNotifier {
       );
     }
     if (save) {
-      final next = DatabaseSettings(
-        mongoUri: settings.mongoUri,
-        sqlConnection: settings.sqlConnection,
-        cloudUri: uri,
-      );
+      final next = settings.copyWith(cloudUri: uri);
       await repository.save(next);
       settings = next;
+      comparison = null;
     }
     message = save
         ? 'Đã lưu kết nối MongoDB Cloud.'
         : 'Kết nối MongoDB Cloud thành công.';
   });
 
-  Future<void> syncCloud({required bool upload}) => _perform(() async {
+  void _validateSync() {
     if (CartController.shared.count > 0 || CartController.shared.locked) {
       throw const DatabaseSettingsException(
         'Hãy hoàn tất hoặc bỏ đơn bán hàng đang nhập trước khi đồng bộ.',
@@ -179,21 +208,116 @@ class DatabaseSettingsController extends ChangeNotifier {
     }
     _validateMongo(settings.mongoUri);
     _validateMongo(settings.cloudUri);
+  }
+
+  Future<void> compareCloud({required bool upload}) =>
+      _perform(SettingsSection.cloud, () async {
+        comparison = null;
+        _comparisonUpload = null;
+        progress.clear();
+        _validateSync();
+        final result = await repository.compareCloud(
+          sourceUri: upload ? settings.mongoUri : settings.cloudUri,
+          targetUri: upload ? settings.cloudUri : settings.mongoUri,
+          progress: (line) {
+            if (_disposed) return;
+            progress.add(line);
+            if (progress.length > 150) progress.removeAt(0);
+            notifyListeners();
+          },
+        );
+        final next = settings.copyWith(
+          databaseVersion: upload ? result.sourceVersion : result.targetVersion,
+          cloudVersion: upload ? result.targetVersion : result.sourceVersion,
+        );
+        await repository.save(next);
+        settings = next;
+        comparison = result;
+        _comparisonUpload = upload;
+        message = result.sourceVersion.version == result.targetVersion.version
+            ? 'Hai database có cùng nội dung.'
+            : 'Đã so sánh phiên bản. Kiểm tra cảnh báo trước khi gộp.';
+      });
+
+  Future<void> syncCloud({
+    required bool upload,
+    String conflictPolicy = 'abort',
+  }) => _perform(SettingsSection.cloud, () async {
+    _validateSync();
+    final preview = comparison;
+    if (preview == null || _comparisonUpload != upload) {
+      throw const DatabaseSettingsException(
+        'So sánh phiên bản trước khi đồng bộ.',
+      );
+    }
+    if (!['abort', 'source', 'target'].contains(conflictPolicy) ||
+        (preview.hasConflicts && conflictPolicy == 'abort')) {
+      throw const DatabaseSettingsException(
+        'Có xung đột. Hãy chọn bên ưu tiên hoặc hủy thao tác.',
+      );
+    }
     progress.clear();
-    final result = await repository.syncCloud(
-      sourceUri: upload ? settings.mongoUri : settings.cloudUri,
-      targetUri: upload ? settings.cloudUri : settings.mongoUri,
-      progress: (line) {
-        if (_disposed) return;
-        progress.add(line);
-        if (progress.length > 150) progress.removeAt(0);
-        notifyListeners();
-      },
-    );
-    final next = DatabaseSettings(
-      mongoUri: upload ? settings.mongoUri : result.mongoUri,
-      sqlConnection: settings.sqlConnection,
-      cloudUri: upload ? result.mongoUri : settings.cloudUri,
+    // Consume the preview: a failed transfer must be compared again.
+    comparison = null;
+    _comparisonUpload = null;
+    late CloudSyncResult result;
+    try {
+      result = await repository.syncCloud(
+        sourceUri: upload ? settings.mongoUri : settings.cloudUri,
+        targetUri: upload ? settings.cloudUri : settings.mongoUri,
+        expectedSourceVersion: preview.sourceVersion.version,
+        expectedTargetVersion: preview.targetVersion.version,
+        conflictPolicy: conflictPolicy,
+        progress: (line) {
+          if (_disposed) return;
+          progress.add(line);
+          if (progress.length > 150) progress.removeAt(0);
+          notifyListeners();
+        },
+      );
+      if (result.sourceMongoUri == null || result.version == null) {
+        throw const DatabaseSettingsException(
+          'Công cụ dữ liệu chưa hỗ trợ đồng bộ hai phía. Hãy cập nhật công cụ và thử lại.',
+        );
+      }
+    } catch (_) {
+      final failed = settings.copyWith(
+        syncHistory: [
+          SyncHistoryEntry(
+            at: _now(),
+            upload: upload,
+            success: false,
+            conflictPolicy: conflictPolicy,
+          ),
+          ...settings.syncHistory,
+        ].take(50).toList(),
+      );
+      try {
+        await repository.save(failed);
+        settings = failed;
+      } catch (_) {}
+      rethrow;
+    }
+    final completedAt = _now();
+    final next = settings.copyWith(
+      mongoUri: upload ? result.sourceMongoUri : result.mongoUri,
+      cloudUri: upload ? result.mongoUri : result.sourceMongoUri,
+      databaseVersion: result.version,
+      cloudVersion: result.version,
+      lastSyncAt: completedAt,
+      syncReminderStartedAt: settings.syncReminderStartedAt ?? completedAt,
+      syncHistory: [
+        SyncHistoryEntry(
+          at: completedAt,
+          upload: upload,
+          success: true,
+          version: result.version,
+          rows: result.rows,
+          collections: result.collections,
+          conflictPolicy: conflictPolicy,
+        ),
+        ...settings.syncHistory,
+      ].take(50).toList(),
     );
     await repository.save(next);
     settings = next;
@@ -201,7 +325,8 @@ class DatabaseSettingsController extends ChangeNotifier {
         '${upload ? 'Đã đồng bộ lên cloud' : 'Đã tải về và sử dụng dữ liệu trên máy'}: ${result.collections} bảng, ${result.rows} dòng. Bản dữ liệu trước vẫn được giữ lại.';
   });
 
-  Future<void> openInstallation() => _perform(repository.openMongoInstallation);
+  Future<void> openInstallation() =>
+      _perform(SettingsSection.mongo, repository.openMongoInstallation);
   @override
   void dispose() {
     _disposed = true;

@@ -8,6 +8,7 @@ import '../../models/repositories/pawn_repository.dart';
 import '../../services/mongo_customer_repository.dart';
 import '../../services/mongo_pawn_repository.dart';
 import 'pawn_details_screen.dart';
+import '../printing/pawn_contract_screen.dart';
 import '../widgets/scrollable_data_table.dart';
 import 'pawn_editor_popup.dart';
 
@@ -69,13 +70,35 @@ class _PawnTabState extends State<PawnTab> {
       : flag == false
       ? 'Đang cầm'
       : '';
+  Future<void> _printContract(int id) async {
+    try {
+      final details = await _controller.repository.details(id);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => PawnContractScreen(details: details)),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Phiếu đã lưu. Không tải được hợp đồng để in; hãy mở lại từ chi tiết phiếu.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _add() async {
+    var printAfterSave = false;
     final id = await showDialog<int>(
       context: context,
       barrierDismissible: false,
       builder: (_) => PawnEditorPopup(
         repository: _controller.repository,
         customers: _customers,
+        onPrintRequested: () => printAfterSave = true,
       ),
     );
     if (id != null && mounted) {
@@ -84,10 +107,17 @@ class _PawnTabState extends State<PawnTab> {
       _controller.search = '';
       await _controller.load();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Đã lưu phiếu cầm đồ #$id')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã lưu phiếu cầm đồ #$id'),
+            action: SnackBarAction(
+              label: 'In hợp đồng',
+              onPressed: () => _printContract(id),
+            ),
+          ),
+        );
       }
+      if (mounted && printAfterSave) await _printContract(id);
     }
   }
 

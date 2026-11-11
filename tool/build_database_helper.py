@@ -5,6 +5,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import json
+from ensure_database_helper import source_digest, STAMP
 
 root = Path(__file__).resolve().parents[1]
 work = Path(tempfile.mkdtemp(prefix='xemay-db-helper-build-'))
@@ -53,3 +55,15 @@ expected = (
 )
 if not expected.is_file():
     raise SystemExit(f'Không thấy {expected}')
+
+# Verify the executable, not just its source, before shipping the Flutter asset.
+request = work / 'capabilities.json'
+request.write_text('{"command":"capabilities"}', encoding='utf-8')
+probe = subprocess.run([str(expected), str(request)], capture_output=True, timeout=60, check=True)
+events = [json.loads(line) for line in probe.stdout.decode('utf-8').splitlines()]
+info = next(event['data'] for event in events if event.get('event') == 'result')
+if info.get('protocolVersion') != 3 or not {'compareCloud', 'syncCloud'}.issubset(info.get('commands', [])):
+    raise SystemExit('Cong cu du lieu vua dong goi chua ho tro cloud.')
+if not windows:
+    STAMP.write_text(source_digest() + '\n', encoding='utf-8')
+print('Packaged helper supports cloud comparison and merge.')

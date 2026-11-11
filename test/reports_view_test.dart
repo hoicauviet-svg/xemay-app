@@ -1,3 +1,4 @@
+import 'package:xemay_app/views/reports/reports_overview_view.dart';
 import 'package:xemay_app/models/reports/report_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +6,72 @@ import 'package:xemay_app/views/reports/reports_view.dart';
 import 'support/fake_reports_repository.dart';
 
 void main() {
+  testWidgets(
+    'Overview and sales show known profit with incomplete cost warning',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final now = DateTime.now();
+      final repo = FakeReportsRepository()
+        ..source = {
+          'HoaDonBan': [
+            {
+              'IdHoaDon': 1,
+              'NgayMua': now,
+              'PhienBanBanHang': 3,
+              'TongThanhToan': 1000,
+              'TongTienHang': 1000,
+            },
+            {
+              'IdHoaDon': 2,
+              'NgayMua': now,
+              'PhienBanBanHang': 3,
+              'TongThanhToan': 100,
+              'TongTienHang': 100,
+            },
+          ],
+          'ChiTietHoaDonBan': [
+            {'IdHoaDon': 1, 'IdXe': 1, 'SoLuong': 1, 'DonGia': 1000},
+          ],
+          'Xe': [
+            {'IdXe': 1, 'GiaNhap': 600, 'TinhTrangXe': 'moi'},
+          ],
+        };
+      final data = await repo.load(ReportRange());
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReportsOverviewView(data: data, onOpen: (_) {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Lợi nhuận đã xác định'), findsOneWidget);
+      expect(find.text('Đơn chưa xác định lợi nhuận'), findsOneWidget);
+      expect(find.text('400 đ'), findsOneWidget);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ReportsView(initialKind: ReportKind.sales, repository: repo),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('sales-profit-summary')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Lợi nhuận đã xác định: 400 đ'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('1 đơn chưa đủ dữ liệu'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('Report time presets, current balances, refresh and retry', (
     t,
   ) async {

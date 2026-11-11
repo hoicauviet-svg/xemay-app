@@ -1,5 +1,6 @@
 import 'package:xemay_app/services/mongo_connection_uri.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,15 +113,34 @@ void main() {
         DatabaseConfig.useMongo(DatabaseConfig.defaultMongoUri);
       });
       final repo = NativeDatabaseSettingsRepository();
-      const settings = DatabaseSettings(
+      final settings = DatabaseSettings(
         mongoUri: 'mongodb://localhost:27017/XM',
         sqlConnection: 'Server=test;Database=xm;UID=u;PWD=example;',
         cloudUri: 'mongodb://cloud/XM',
+        databaseVersion: FakeDatabaseSettingsRepository.localVersion,
+        cloudVersion: FakeDatabaseSettingsRepository.remoteVersion,
+        lastSyncAt: DateTime.utc(2026, 11, 10),
+        syncReminderStartedAt: DateTime.utc(2026, 10, 20),
+        syncHistory: [
+          SyncHistoryEntry(
+            at: DateTime.utc(2026, 11, 10),
+            upload: true,
+            success: true,
+            version: FakeDatabaseSettingsRepository.remoteVersion,
+            rows: 42,
+            collections: 3,
+          ),
+        ],
       );
       await repo.save(settings);
       expect(jsonDecode(stored!)['sqlConnection'], settings.sqlConnection);
       expect((await repo.load()).mongoUri, settings.mongoUri);
       expect((await repo.load()).cloudUri, settings.cloudUri);
+      expect((await repo.load()).databaseVersion?.version, 'local-hash');
+      expect((await repo.load()).cloudVersion?.version, 'cloud-hash');
+      expect((await repo.load()).lastSyncAt, settings.lastSyncAt);
+      expect((await repo.load()).syncHistory.single.success, isTrue);
+      expect((await repo.load()).syncHistory.single.rows, 42);
       expect(DatabaseConfig.mongoUri, settings.mongoUri);
     },
   );
@@ -169,6 +189,76 @@ void main() {
       expect(t.takeException(), isNull);
     },
   );
+  test(
+    'connection feedback is stored and cleared per settings section',
+    () async {
+      final repo = FakeDatabaseSettingsRepository()..failSql = true;
+      final controller = DatabaseSettingsController(repo);
+      addTearDown(controller.dispose);
+      await controller.load();
+      await controller.checkSql('Server=test;Database=xm;UID=u;PWD=p;');
+      final sqlError = controller.errorFor(SettingsSection.sql);
+      expect(sqlError, contains('SQL Server'));
+      await controller.checkMongo('invalid');
+      expect(controller.errorFor(SettingsSection.mongo), isNotNull);
+      expect(controller.errorFor(SettingsSection.sql), sqlError);
+      repo.status = const MongoInstallationStatus(
+        installed: true,
+        connected: true,
+      );
+      await controller.checkCloud('mongodb://cloud/XM');
+      expect(
+        controller.messageFor(SettingsSection.cloud),
+        contains('Cloud thành công'),
+      );
+      expect(controller.messageFor(SettingsSection.mongo), isNull);
+      expect(controller.errorFor(SettingsSection.sql), sqlError);
+      repo.failSql = false;
+      await controller.checkSql('Server=test;Database=xm;UID=u;PWD=p;');
+      expect(controller.errorFor(SettingsSection.sql), isNull);
+      expect(controller.errorFor(SettingsSection.mongo), isNotNull);
+      expect(
+        controller.messageFor(SettingsSection.cloud),
+        contains('Cloud thành công'),
+      );
+    },
+  );
+
+  testWidgets(
+    'SQL errors completing after switching tabs stay only in SQL tab',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repo = _DelayedSqlRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: SettingsTab(repository: repo)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, 'SQL Server'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('settings-check-sql')));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(Tab, 'MongoDB'));
+      await tester.pump(const Duration(milliseconds: 400));
+      repo.result.completeError(
+        const DatabaseSettingsException('Lỗi SQL riêng của tab SQL'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Lỗi SQL riêng của tab SQL'), findsNothing);
+      await tester.tap(find.widgetWithText(Tab, 'MongoDB Cloud'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lỗi SQL riêng của tab SQL'), findsNothing);
+      await tester.tap(find.widgetWithText(Tab, 'SQL Server'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lỗi SQL riêng của tab SQL'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('connection settings fit a narrow window', (t) async {
     t.view.physicalSize = const Size(420, 800);
     t.view.devicePixelRatio = 1;
@@ -186,4 +276,10 @@ void main() {
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
   });
+}
+
+class _DelayedSqlRepository extends FakeDatabaseSettingsRepository {
+  final result = Completer<int>();
+  @override
+  Future<int> checkSql(String connection) => result.future;
 }

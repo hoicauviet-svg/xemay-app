@@ -16,8 +16,7 @@ void main() {
         '_id': 2,
         'IdKH': 2,
         'TenKhachHang': 'Khách kiểm thử',
-        'DiaChiChiTiet': 'Thôn 1',
-        'IdXa': 1,
+        'DiaChiChiTiet': 'Thôn 1, Xã kiểm thử',
         'SoDienThoai': '0900000001',
       });
       await tester.pumpWidget(

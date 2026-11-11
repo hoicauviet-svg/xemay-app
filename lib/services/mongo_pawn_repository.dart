@@ -1,3 +1,4 @@
+import 'customer_address_migration.dart';
 import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -9,6 +10,7 @@ class MongoPawnRepository implements PawnRepository {
   MongoPawnRepository({String? uri, this.checkpoint})
     : _db = Db(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
+  bool _addressesReady = false;
   @override
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, _connect);
 
@@ -18,6 +20,10 @@ class MongoPawnRepository implements PawnRepository {
       _opening ??= _open().whenComplete(() => _opening = null);
   Future<void> _open() async {
     if (!_db.isConnected) await _db.open(writeConcern: WriteConcern.journaled);
+    if (!_addressesReady) {
+      await migrateCustomerAddresses(_db);
+      _addressesReady = true;
+    }
   }
 
   @override
@@ -286,6 +292,9 @@ class MongoPawnRepository implements PawnRepository {
     final customer = await _db.collection('KhachHang').findOne({
       'IdKH': contract['IdKhachHang'],
     });
+    if (customer != null) {
+      customer['DiaChiHienThi'] = customer['DiaChiChiTiet'] ?? '';
+    }
     final payments = await _db
         .collection('TraNoCamDo')
         .modernFind(

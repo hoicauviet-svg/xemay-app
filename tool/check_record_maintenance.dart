@@ -368,6 +368,69 @@ Future<void> main() async {
           (await get('CamDo', 'pawn'))['TrangThai'] == false,
       'Delete pawn repayment restores principal through history',
     );
+    final pawnFields = <String, dynamic>{
+      'IdKhachHang': 1,
+      'TaiSanTheChap': 'Xe máy cập nhật',
+      'SoTienVay': 1500,
+      'NgayVay': date,
+      'NgayHan': paidOn,
+      'NgayPhanTram': false,
+      'LaiSuat': 2.5,
+      'TrangThai': false,
+      'GhiChu': 'Phiếu đã sửa',
+    };
+    await service.save(RecordKind.pawn, 1, pawnFields, [], requestId: token());
+    check(
+      (await get('CamDo', 'pawn'))['TaiSanTheChap'] == 'Xe máy cập nhật',
+      'Pawn details save collateral',
+    );
+    await put('TraNoCamDo', {
+      '_id': 'paidpawn',
+      'IdTraNoCamDo': 2,
+      'IdCamDo': 1,
+      'NgayTra': paidOn,
+      'TienGoc': 500,
+      'LaiThu': 20,
+    });
+    await reject(
+      () => service.save(
+        RecordKind.pawn,
+        1,
+        {...pawnFields, 'SoTienVay': 100},
+        [],
+        requestId: token(),
+      ),
+      'Reject principal below collected amount',
+    );
+    await reject(
+      () => service.save(
+        RecordKind.pawn,
+        1,
+        {...pawnFields, 'LaiSuat': 3},
+        [],
+        requestId: token(),
+      ),
+      'Reject rate reinterpretation after collection',
+    );
+    await service.save(
+      RecordKind.pawn,
+      1,
+      {...pawnFields, 'GhiChu': 'Sau thanh toán'},
+      [],
+      requestId: token(),
+    );
+    check(
+      (await get('CamDo', 'pawn'))['GhiChu'] == 'Sau thanh toán',
+      'Pawn notes remain editable after payment',
+    );
+    final deletePawnRequest = token();
+    await service.delete(RecordKind.pawn, 1, requestId: deletePawnRequest);
+    await service.delete(RecordKind.pawn, 1, requestId: deletePawnRequest);
+    check(
+      await db.collection('CamDo').count() == 0 &&
+          await db.collection('TraNoCamDo').count() == 0,
+      'Pawn delete removes header/history and safely retries',
+    );
     await put('VayVon', {
       '_id': 'loan',
       'IdVayVon': 1,

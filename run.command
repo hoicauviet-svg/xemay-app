@@ -24,5 +24,7 @@ else
   exit 1
 fi
 
+python3 tool/ensure_database_helper.py
+
 printf 'Đang chạy ứng dụng quản lý cửa hàng…\n'
 "$flutter_bin" run -d macos "$@"

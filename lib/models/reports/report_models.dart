@@ -363,6 +363,16 @@ class ReportCalculator {
           : 0;
     }
 
+    final vehicleReceipts = <dynamic, List<Map<String, dynamic>>>{};
+    for (final row in table('ChiTietNhapHang')) {
+      if (row['IdXe'] != null)
+        vehicleReceipts.putIfAbsent(row['IdXe'], () => []).add(row);
+    }
+    Map<String, dynamic>? receiptFor(dynamic id) {
+      final rows = vehicleReceipts[id] ?? [];
+      return rows.length == 1 ? rows.single : null;
+    }
+
     final partCosts = <dynamic, List<num?>>{};
     for (final row in table('ChiTietNhapHang')) {
       if (row['IdXe'] == null) {
@@ -371,6 +381,40 @@ class ReportCalculator {
             .add(recordedCosts(row));
       }
     }
+    final receiptHeaders = {
+      for (final row in table('NhapHang')) row['IdNhapHang']: row,
+    };
+    final partReceipts = <dynamic, List<Map<String, dynamic>>>{};
+    for (final row in table('ChiTietNhapHang')) {
+      if (row['IdXe'] == null) {
+        partReceipts.putIfAbsent(row['IdSanPham'], () => []).add(row);
+      }
+    }
+    num? historicalPartPrice(Map<String, dynamic> line, dynamic soldAt) {
+      if (soldAt is! DateTime) return null;
+      final quantity = _number(line['SoLuong']);
+      if (quantity == null || quantity <= 0) return null;
+      final prices = <num>{};
+      num received = 0;
+      for (final receipt
+          in partReceipts[line['IdSanPham']] ?? <Map<String, dynamic>>[]) {
+        final header = receiptHeaders[receipt['IdNhapHang']];
+        if (header?['TrangThaiLuu'] == 'dang_luu') continue;
+        final date = header?['NgayNhap'];
+        if (date is! DateTime) return null;
+        if (financeDay(date).isAfter(financeDay(soldAt))) continue;
+        final price = _number(receipt['GiaNhap']);
+        final count = _number(receipt['SoLuong']);
+        if (price == null || price < 0 || count == null || count <= 0)
+          return null;
+        prices.add(price);
+        received += count;
+      }
+      // A changing purchase price requires a saved sale cost/allocation; never
+      // choose the latest stock reference price for an old sale.
+      return prices.length == 1 && received >= quantity ? prices.single : null;
+    }
+
     num? saleCosts(List<Map<String, dynamic>> details) {
       if (details.isEmpty) return null;
       final values = <num?>[];
@@ -382,7 +426,16 @@ class ReportCalculator {
         if (line['IdXe'] != null) {
           if (!seen.add(line['IdXe'])) continue;
           final vehicle = vehicles[line['IdXe']];
-          values.add(vehicle == null ? null : recordedCosts(vehicle));
+          final receipt = receiptFor(line['IdXe']);
+          values.add(
+            vehicle == null
+                ? (receipt == null ? null : recordedCosts(receipt))
+                : vehicle.containsKey('ChiPhi') ||
+                      vehicle.containsKey('TongChiPhi') ||
+                      receipt == null
+                ? recordedCosts(vehicle)
+                : recordedCosts(receipt),
+          );
         } else {
           final product = products[line['IdSanPham']];
           final costs = product == null
@@ -404,6 +457,8 @@ class ReportCalculator {
       final seen = <dynamic>{};
       for (final line in details) {
         if (line['LoaiSanPham'] == 'dich_vu' || line['IdDichVu'] != null) {
+          // Services have no purchase price; old missing/null values also cost zero.
+          values.add(0);
           continue;
         }
         final quantity = _number(line['SoLuong']);
@@ -413,7 +468,8 @@ class ReportCalculator {
           if (quantity != 1 || !seen.add(line['IdXe'])) return null;
           price =
               _number(line['GiaNhap']) ??
-              _number(vehicles[line['IdXe']]?['GiaNhap']);
+              _number(vehicles[line['IdXe']]?['GiaNhap']) ??
+              _number(receiptFor(line['IdXe'])?['GiaNhap']);
         } else {
           // Current reference prices do not establish historical sale costs.
           price = _number(line['GiaNhap']);
@@ -464,6 +520,11 @@ class ReportCalculator {
             in lines[header['IdHoaDon']] ?? <Map<String, dynamic>>[])
           {
             ...line,
+            if (line['GiaNhap'] == null &&
+                line['IdXe'] == null &&
+                line['LoaiSanPham'] != 'dich_vu' &&
+                line['IdDichVu'] == null)
+              'GiaNhap': historicalPartPrice(line, header['NgayMua']),
             'DonGiaHienThi':
                 line['DonGia'] ??
                 (legacy
@@ -778,11 +839,8 @@ class ReportCalculator {
       'NgayHen',
     );
     debtGroup('Vay vốn', table('VayVon'), 'TongConNo', 'NgayHen');
-    final localities = {for (final r in table('Xa')) r['IdXa']: r['TenXa']};
-    String address(Map<String, dynamic>? customer) => [
-      customer?['DiaChiChiTiet'],
-      localities[customer?['IdXa']],
-    ].where((v) => v != null && '$v'.trim().isNotEmpty).join(', ');
+    String address(Map<String, dynamic>? customer) =>
+        '${customer?['DiaChiChiTiet'] ?? ''}'.trim();
     int? overdueDays(dynamic date) => date is DateTime
         ? today.difference(financeDay(date)).inDays.clamp(0, 1000000)
         : null;
@@ -1037,12 +1095,19 @@ class ReportCalculator {
           'Chi phí': salesSums[6].total,
           'Giá nhập': salesSums[7].total,
           'Lợi nhuận': salesSums[8].total,
+          'Lợi nhuận đã xác định':
+              salesRows.every((row) => row.last == null) && salesRows.isNotEmpty
+              ? null
+              : salesSums[8].value,
+          'Đơn thiếu lợi nhuận': salesSums[8].missing,
         },
         notes: [
           if (salesMismatchIds.isNotEmpty)
             '${salesMismatchIds.length} đơn có tổng thanh toán khác tổng đã thu và còn nợ. Mã: ${salesMismatchIds.take(10).join(', ')}.',
           if (missingSales > 0)
             '$missingSales đơn chưa đủ số liệu. Ô trống và tổng để trống khi thiếu dữ liệu.',
+          if (salesSums[8].missing > 0)
+            '${salesSums[8].missing} đơn chưa xác định lợi nhuận do thiếu doanh thu, giá nhập hoặc chi phí. Lợi nhuận đã xác định chỉ cộng các đơn đủ dữ liệu; không coi giá vốn thiếu là 0.',
         ],
       ),
       ReportKind.receipts: ReportSection(
@@ -1252,6 +1317,13 @@ class ReportCalculator {
         rows: _sortVouchers(rows),
         totals: {
           isSales ? 'Số đơn' : 'Số lô': rows.length,
+          if (isSales) ...{
+            'Lợi nhuận đã xác định':
+                rows.isNotEmpty && rows.every((r) => r.last == null)
+                ? null
+                : _sumValues(rows.map((r) => r.last).whereType<num>()),
+            'Đơn thiếu lợi nhuận': rows.where((r) => r.last == null).length,
+          },
           for (var i = 4; i < template.columns.length; i++)
             template.columns[i].label: _sumValues(rows.map((r) => r[i])),
         },

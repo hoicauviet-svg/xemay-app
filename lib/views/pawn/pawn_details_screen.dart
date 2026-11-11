@@ -11,6 +11,7 @@ import '../widgets/app_top_bar.dart';
 import '../widgets/form_section.dart';
 import '../widgets/scrollable_data_table.dart';
 import 'pawn_payment_form.dart';
+import '../printing/pawn_contract_screen.dart';
 
 class PawnDetailsScreen extends StatefulWidget {
   const PawnDetailsScreen({
@@ -87,6 +88,27 @@ class _PawnDetailsScreenState extends State<PawnDetailsScreen>
       ..showSnackBar(const SnackBar(content: Text('Thanh toán thành công')));
     _tabs.animateTo(1);
     await _controller.load();
+  }
+
+  Future<void> _editContract(bool deleting) async {
+    final maintenance = widget.repository.maintenance;
+    if (maintenance == null) return;
+    final changed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => RecordEditor(
+        repository: maintenance,
+        kind: RecordKind.pawn,
+        id: widget.id,
+        deleting: deleting,
+      ),
+    );
+    if (changed != true || !mounted) return;
+    if (deleting) {
+      Navigator.pop(context);
+    } else {
+      await _controller.load();
+    }
   }
 
   @override
@@ -213,6 +235,37 @@ class _PawnDetailsScreenState extends State<PawnDetailsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => PawnContractScreen(details: details),
+                  ),
+                ),
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('In hợp đồng'),
+              ),
+              if (widget.repository.maintenance != null) ...[
+                OutlinedButton.icon(
+                  onPressed: () => _editContract(false),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Cập nhật thông tin'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _editContract(true),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Color(0xFFB44141),
+                  ),
+                  label: const Text('Xóa phiếu'),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 20),
           if (overdue != null && overdue > 0)
             Semantics(
               liveRegion: true,

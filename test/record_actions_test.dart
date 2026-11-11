@@ -89,6 +89,34 @@ class _Maintenance extends RecordMaintenance {
   }
 }
 
+Widget _actionsHarness(_Maintenance repo, Future<void> Function() changed) =>
+    MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: RecordActions(
+            repository: repo,
+            kind: RecordKind.batch,
+            id: 1,
+            paymentId: 'payment',
+            onChanged: changed,
+            onSelect: (deleting) async {
+              final result = await showDialog<bool>(
+                context: context,
+                builder: (_) => RecordEditor(
+                  repository: repo,
+                  kind: RecordKind.batch,
+                  id: 1,
+                  paymentId: 'payment',
+                  deleting: deleting,
+                ),
+              );
+              if (result == true) await changed();
+            },
+          ),
+        ),
+      ),
+    );
+
 void main() {
   testWidgets(
     'Edit repayment preloads values and retries same request after uncertain write',
@@ -100,19 +128,9 @@ void main() {
       final repo = _Maintenance();
       var changed = 0;
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: RecordActions(
-              repository: repo,
-              kind: RecordKind.batch,
-              id: 1,
-              paymentId: 'payment',
-              onChanged: () async {
-                changed++;
-              },
-            ),
-          ),
-        ),
+        _actionsHarness(repo, () async {
+          changed++;
+        }),
       );
       await tester.tap(find.byTooltip('Sửa phiếu trả nợ'));
       await tester.pumpAndSettle();
@@ -144,19 +162,9 @@ void main() {
     final repo = _Maintenance();
     var changed = 0;
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: RecordActions(
-            repository: repo,
-            kind: RecordKind.batch,
-            id: 1,
-            paymentId: 'payment',
-            onChanged: () async {
-              changed++;
-            },
-          ),
-        ),
-      ),
+      _actionsHarness(repo, () async {
+        changed++;
+      }),
     );
     await tester.tap(find.byTooltip('Xóa phiếu trả nợ'));
     await tester.pumpAndSettle();

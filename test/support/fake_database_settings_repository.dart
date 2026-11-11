@@ -50,12 +50,46 @@ class FakeDatabaseSettingsRepository implements DatabaseSettingsRepository {
   int syncs = 0;
   String? syncSource, syncTarget;
   bool failSync = false;
+  static const localVersion = DatabaseVersion(
+    version: 'local-hash',
+    revision: 1,
+    observedAt: '2026-11-10T10:00:00Z',
+    rows: 42,
+    collections: 3,
+  );
+  static const remoteVersion = DatabaseVersion(
+    version: 'cloud-hash',
+    revision: 2,
+    observedAt: '2026-11-10T10:00:00Z',
+    rows: 40,
+    collections: 3,
+  );
+  int conflicts = 0;
+  String? policy;
+  @override
+  Future<CloudComparison> compareCloud({
+    required String sourceUri,
+    required String targetUri,
+    void Function(String)? progress,
+  }) async => CloudComparison(
+    sourceVersion: localVersion,
+    targetVersion: remoteVersion,
+    sourceOnly: 3,
+    targetOnly: 2,
+    conflicts: conflicts,
+    schemaConflicts: 0,
+    identical: 38,
+  );
   @override
   Future<CloudSyncResult> syncCloud({
     required String sourceUri,
     required String targetUri,
+    required String expectedSourceVersion,
+    required String expectedTargetVersion,
+    required String conflictPolicy,
     required void Function(String) progress,
   }) async {
+    policy = conflictPolicy;
     syncs++;
     syncSource = sourceUri;
     syncTarget = targetUri;
@@ -63,7 +97,9 @@ class FakeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     progress('Đã đối chiếu dữ liệu');
     return CloudSyncResult(
       mongoUri: '$targetUri-sync',
+      sourceMongoUri: '$sourceUri-sync',
       database: 'XM_sync',
+      version: remoteVersion,
       rows: 42,
       collections: 3,
     );

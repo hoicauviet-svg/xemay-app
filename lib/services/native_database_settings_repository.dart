@@ -15,6 +15,33 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       ? 'assets/database_helper/xemay_database_helper_windows.zip'
       : 'assets/database_helper/xemay_database_helper';
   Future<String>? _executable;
+  Future<void>? _cloudCompatibility;
+
+  Future<void> _ensureCloudSupport() =>
+      _cloudCompatibility ??= _checkCloudSupport().catchError((Object error) {
+        _cloudCompatibility = null;
+        throw error;
+      });
+
+  Future<void> _checkCloudSupport() async {
+    const guidance =
+        'Công cụ dữ liệu đi kèm ứng dụng đã cũ, chưa hỗ trợ đồng bộ cloud. Hãy đóng ứng dụng và chạy lại bằng run.command hoặc cài bản ứng dụng mới.';
+    try {
+      final info = await _run({'command': 'capabilities'});
+      final commands = info['commands'];
+      if (info['protocolVersion'] != 3 ||
+          commands is! List ||
+          !commands.contains('compareCloud') ||
+          !commands.contains('syncCloud')) {
+        throw const DatabaseSettingsException(guidance);
+      }
+    } on DatabaseSettingsException catch (error) {
+      if (error.message.contains('Yêu cầu không được hỗ trợ')) {
+        throw const DatabaseSettingsException(guidance);
+      }
+      rethrow;
+    }
+  }
 
   @override
   Future<DatabaseSettings> load() async {
@@ -27,6 +54,27 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
           json['mongoUri'] as String? ?? DatabaseConfig.configuredMongoUri,
       sqlConnection: json['sqlConnection'] as String? ?? '',
       cloudUri: json['cloudUri'] as String? ?? '',
+      lastSyncAt: DateTime.tryParse(json['lastSyncAt'] as String? ?? ''),
+      syncReminderStartedAt: DateTime.tryParse(
+        json['syncReminderStartedAt'] as String? ?? '',
+      ),
+      syncHistory: (json['syncHistory'] as List? ?? [])
+          .map(
+            (entry) => SyncHistoryEntry.fromJson(
+              Map<String, dynamic>.from(entry as Map),
+            ),
+          )
+          .toList(),
+      databaseVersion: json['databaseVersion'] is Map
+          ? DatabaseVersion.fromJson(
+              Map<String, dynamic>.from(json['databaseVersion'] as Map),
+            )
+          : null,
+      cloudVersion: json['cloudVersion'] is Map
+          ? DatabaseVersion.fromJson(
+              Map<String, dynamic>.from(json['cloudVersion'] as Map),
+            )
+          : null,
     );
   }
 
@@ -103,7 +151,10 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     final current = await stamp.exists()
         ? (await stamp.readAsString()).trim()
         : '';
-    if (current != digest) {
+    final executable = File(
+      '${folder.path}\\xemay_database_helper_windows.exe',
+    );
+    if (current != digest || !await executable.exists()) {
       if (await folder.exists()) await folder.delete(recursive: true);
       await folder.create(recursive: true);
       for (final entry in ZipDecoder().decodeBytes(payload)) {
@@ -116,16 +167,16 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
         }
         await out.parent.create(recursive: true);
         final content = entry.content;
-        if (content is! List<int>) {
-          throw const DatabaseSettingsException(
-            'Chưa giải nén được công cụ kết nối dữ liệu.',
-          );
-        }
         await out.writeAsBytes(content, flush: true);
+      }
+      if (!await executable.exists()) {
+        throw const DatabaseSettingsException(
+          'Bộ công cụ Windows thiếu file chạy. Kiểm tra lại bản cài đặt.',
+        );
       }
       await stamp.writeAsString('$digest\n', flush: true);
     }
-    return '${folder.path}\\xemay_database_helper_windows.exe';
+    return executable.path;
   }
 
   Future<Map<String, dynamic>> _run(
@@ -283,21 +334,58 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
   }
 
   @override
+  Future<CloudComparison> compareCloud({
+    required String sourceUri,
+    required String targetUri,
+    void Function(String)? progress,
+  }) async {
+    await _ensureCloudSupport();
+    return CloudComparison.fromJson(
+      await _run(
+        {
+          'command': 'compareCloud',
+          'sourceUri': sourceUri,
+          'targetUri': targetUri,
+        },
+        progress: progress,
+        timeout: const Duration(seconds: 195),
+      ),
+    );
+  }
+
+  @override
   Future<CloudSyncResult> syncCloud({
     required String sourceUri,
     required String targetUri,
+    required String expectedSourceVersion,
+    required String expectedTargetVersion,
+    required String conflictPolicy,
     required void Function(String) progress,
   }) async {
+    await _ensureCloudSupport();
     final data = await _run(
-      {'command': 'syncCloud', 'sourceUri': sourceUri, 'targetUri': targetUri},
+      {
+        'command': 'syncCloud',
+        'sourceUri': sourceUri,
+        'targetUri': targetUri,
+        'expectedSourceVersion': expectedSourceVersion,
+        'expectedTargetVersion': expectedTargetVersion,
+        'conflictPolicy': conflictPolicy,
+      },
       progress: progress,
       timeout: const Duration(hours: 2),
     );
     return CloudSyncResult(
       mongoUri: data['mongoUri'] as String,
       database: data['database'] as String,
+      sourceMongoUri: data['sourceMongoUri'] as String?,
       rows: (data['rows'] as num).toInt(),
       collections: (data['collections'] as num).toInt(),
+      version: data['version'] is Map
+          ? DatabaseVersion.fromJson(
+              Map<String, dynamic>.from(data['version'] as Map),
+            )
+          : null,
     );
   }
 

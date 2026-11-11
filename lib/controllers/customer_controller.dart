@@ -7,7 +7,6 @@ class CustomerController extends ChangeNotifier {
   CustomerController(this.repository, {this.closeRepository = true});
   final bool closeRepository;
   final CustomerRepository repository;
-  List<Map<String, dynamic>> localities = [];
   CustomerPage? data;
   String search = '', phoneFilter = 'all';
   int page = 0, _request = 0;
@@ -21,8 +20,6 @@ class CustomerController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final places = await repository.localities();
-      if (_disposed || request != _request) return;
       final result = await repository.fetch(
         search: search,
         phoneFilter: phoneFilter,
@@ -34,7 +31,6 @@ class CustomerController extends ChangeNotifier {
         await load();
         return;
       }
-      localities = places;
       data = result;
       loading = false;
     } catch (_) {
@@ -72,13 +68,8 @@ class CustomerController extends ChangeNotifier {
       repository.create(draft);
   Future<void> delete(Map<String, dynamic> customer) =>
       repository.delete(customer);
-  String address(Map<String, dynamic> row) {
-    final place = localities.where((x) => x['IdXa'] == row['IdXa']);
-    return [
-      row['DiaChiChiTiet'],
-      if (place.isNotEmpty) place.first['TenXa'],
-    ].where((x) => x != null && x.toString().trim().isNotEmpty).join(', ');
-  }
+  String address(Map<String, dynamic> row) =>
+      '${row['DiaChiChiTiet'] ?? ''}'.trim();
 
   @override
   void dispose() {

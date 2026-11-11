@@ -133,6 +133,8 @@ void main() {
         'Chi phí': 0,
         'Giá nhập': 600,
         'Lợi nhuận': 2200,
+        'Lợi nhuận đã xác định': 2200,
+        'Đơn thiếu lợi nhuận': 0,
       });
       expect(sales.rows.length, 2);
       expect(sales.rows.map((r) => r[0]), [2, 1]);
@@ -381,6 +383,23 @@ void main() {
         build(source).sections[ReportKind.sales]!.totals['Lợi nhuận'],
         isNull,
       );
+      expect(
+        build(
+          source,
+        ).sections[ReportKind.sales]!.totals['Lợi nhuận đã xác định'],
+        1800,
+      );
+      expect(
+        build(source).sections[ReportKind.sales]!.totals['Đơn thiếu lợi nhuận'],
+        1,
+      );
+      source['ChiTietNhapHang'] = [
+        {'IdXe': 1, 'GiaNhap': 650},
+      ];
+      expect(
+        build(source).sections[ReportKind.sales]!.totals['Lợi nhuận'],
+        2000,
+      );
       source['Xe']!.first['GiaNhap'] = 600;
       source['ChiTietHoaDonBan']!.add({
         'IdHoaDon': 2,
@@ -402,6 +421,47 @@ void main() {
       );
     },
   );
+  test('Service purchase cost defaults to zero for old and mixed invoices', () {
+    for (final service in <Map<String, dynamic>>[
+      {'LoaiSanPham': 'dich_vu'},
+      {'LoaiSanPham': 'dich_vu', 'GiaNhap': null},
+      {'IdDichVu': 'service-1', 'GiaNhap': null},
+    ]) {
+      final source = fixture();
+      source['ChiTietHoaDonBan']![1] = {
+        'IdHoaDon': 2,
+        'SoLuong': 1,
+        'DonGia': 2000,
+        ...service,
+      };
+      final data = build(source);
+      final sales = data.sections[ReportKind.sales]!;
+      final priceColumn = sales.columns.indexWhere(
+        (c) => c.label == 'Giá nhập',
+      );
+      final profitColumn = sales.columns.indexWhere(
+        (c) => c.label == 'Lợi nhuận',
+      );
+      expect(sales.rows.first[priceColumn], 0);
+      expect(sales.rows.first[profitColumn], 1800);
+      expect(sales.totals['Lợi nhuận'], 2200);
+      expect(sales.totals['Đơn thiếu lợi nhuận'], 0);
+      expect(
+        data.salesByGroup[ReportProductGroup.services]!.totals['Giá nhập'],
+        0,
+      );
+      expect(
+        data.salesByGroup[ReportProductGroup.services]!.totals['Lợi nhuận'],
+        1800,
+      );
+      // A service attached to a vehicle invoice must not make its cost unknown.
+      source['ChiTietHoaDonBan']![1]['IdHoaDon'] = 1;
+      source['HoaDonBan']!.removeWhere((h) => h['IdHoaDon'] == 2);
+      final mixed = build(source).sections[ReportKind.sales]!;
+      expect(mixed.rows.single[priceColumn], 600);
+      expect(mixed.totals['Lợi nhuận'], 2400);
+    }
+  });
   test(
     'Receipts show linked partner/carrier with legacy text fallback and no difference column',
     () {
@@ -494,12 +554,8 @@ void main() {
           'IdKH': 55,
           'TenKhachHang': 'Khách A',
           'SoDienThoai': '091111',
-          'DiaChiChiTiet': 'Nhà 1',
-          'IdXa': 7,
+          'DiaChiChiTiet': 'Nhà 1, Phường A',
         },
-      ];
-      source['Xa'] = [
-        {'IdXa': 7, 'TenXa': 'Phường A'},
       ];
       source['NhapHang']!.first.addAll({
         'IdNhapHang': 100,

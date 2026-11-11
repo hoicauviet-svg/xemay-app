@@ -15,9 +15,11 @@ class PawnEditorPopup extends StatefulWidget {
     super.key,
     required this.repository,
     required this.customers,
+    this.onPrintRequested,
   });
   final PawnRepository repository;
   final CustomerRepository customers;
+  final VoidCallback? onPrintRequested;
   @override
   State<PawnEditorPopup> createState() => _PawnEditorPopupState();
 }
@@ -55,7 +57,7 @@ class _PawnEditorPopupState extends State<PawnEditorPopup> {
     _customerFocus.unfocus();
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool printContract = false}) async {
     if (_saving) return;
     if (_submitted == null) {
       if (!_form.currentState!.validate()) return;
@@ -75,7 +77,10 @@ class _PawnEditorPopupState extends State<PawnEditorPopup> {
         _submitted!,
         requestId: _requestId,
       );
-      if (mounted) Navigator.pop(context, id);
+      if (mounted) {
+        if (printContract) widget.onPrintRequested?.call();
+        Navigator.pop(context, id);
+      }
     } on PawnException catch (e) {
       if (mounted) {
         setState(() {
@@ -360,14 +365,21 @@ class _PawnEditorPopupState extends State<PawnEditorPopup> {
         ),
         bottomNavigationBar: Padding(
           padding: const EdgeInsets.all(20),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 12,
+            runSpacing: 8,
             children: [
               OutlinedButton(
                 onPressed: _saving ? null : () => Navigator.pop(context),
                 child: const Text('Hủy'),
               ),
-              const SizedBox(width: 12),
+              if (widget.onPrintRequested != null)
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : () => _save(printContract: true),
+                  icon: const Icon(Icons.print_outlined),
+                  label: const Text('Lưu & in hợp đồng'),
+                ),
               FilledButton.icon(
                 onPressed: _saving ? null : _save,
                 icon: const Icon(Icons.save_outlined),

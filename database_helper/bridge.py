@@ -187,7 +187,9 @@ def main():
     try:
         request=json.loads(read_request())
         command=request['command']
-        if command=='probeMongo':
+        if command=='capabilities':
+            emit('result',data={'protocolVersion':3,'commands':['probeMongo','probeSql','clone','checkSqlDriver','compareCloud','syncCloud']})
+        elif command=='probeMongo':
             try:result=probe_mongo(request['mongoUri'])
             except Exception as error:
                 record_error(error, request)
@@ -206,7 +208,7 @@ def main():
                 emit('result',data={'database':info[0]['name'],'tables':tables})
             finally:connection.close()
         elif command=='clone':emit('result',data=clone(request))
-        elif command=='syncCloud':emit('result',data=sync_cloud(request, lambda message: emit('progress',message=message)))
+        elif command in ('syncCloud','compareCloud'):emit('result',data=sync_cloud(request, lambda message: emit('progress',message=message)))
         else:raise ValueError('Yêu cầu không được hỗ trợ.')
     except ValueError as error:
         path=record_error(error, request)
@@ -214,7 +216,10 @@ def main():
     except Exception as error:
         original=error.__context__ or error
         path=record_error(error, request)
-        emit('error',code=type(original).__name__,logFile=path,message='Không hoàn tất được kết nối hoặc sao chép. Kiểm tra chuỗi kết nối, quyền truy cập và máy chủ; dữ liệu đang dùng được giữ nguyên.')
+        message='Không hoàn tất được kết nối hoặc sao chép. Kiểm tra chuỗi kết nối, quyền truy cập và máy chủ; dữ liệu đang dùng được giữ nguyên.'
+        if request.get('command')=='compareCloud' and (getattr(error,'timeout',False) or getattr(original,'timeout',False)):
+            message='Quá thời gian so sánh (3 phút). Kiểm tra mạng và thử lại; dữ liệu đang dùng được giữ nguyên.'
+        emit('error',code=type(original).__name__,logFile=path,message=message)
         sys.exit(1)
 
 if __name__=='__main__':main()

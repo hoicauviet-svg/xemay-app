@@ -1,0 +1,120 @@
+{
+  "sourceSha256": "16f33f15eb486827a9b81b646090237f3b00bc04e9660544025c77be3fc4dcf9",
+  "pageFormat": "letter",
+  "paragraphs": [
+    {
+      "text": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+      "kind": "header"
+    },
+    {
+      "text": "Độc lập – Tự do – Hạnh phúc",
+      "kind": "subtitle"
+    },
+    {
+      "text": "HỢP ĐỒNG CẦM CỐ TÀI SẢN THẾ CHẤP",
+      "kind": "title"
+    },
+    {
+      "text": "Hôm nay, ngày {loanDay} tháng {loanMonth} năm {loanYear}",
+      "kind": "date"
+    },
+    {
+      "text": "Chúng tôi gồm :  1. Đại diện bên A ( Bên vay tiền  ).",
+      "kind": "section"
+    },
+    {
+      "text": "Ông (bà): {borrowerName}     Số ĐT: {phone}\nĐịa chỉ: {address}",
+      "kind": "body"
+    },
+    {
+      "text": "Số CMND/CCCD: {identityNumber}     Cấp ngày {identityDate}     Tại {identityPlace}",
+      "kind": "body"
+    },
+    {
+      "text": "2. Đại diện bên B (Bên cho vay ) :",
+      "kind": "section"
+    },
+    {
+      "text": "Ông : Nguyễn Văn Toàn – Đại diện cửa hàng xe máy “Toàn Hợp”",
+      "kind": "body"
+    },
+    {
+      "text": "Địa chỉ : Số nhà 008 – Tổ 3 – Khu phố II – TT Mậu A – Văn Yên – Yên Bái.",
+      "kind": "body"
+    },
+    {
+      "text": "Điện Thoại : 0216 3835 512   DĐ: 0912. 506 .369  ( Độ : 0912 785 389 ;   Nam : 0975 836 369 )",
+      "kind": "body"
+    },
+    {
+      "text": "Giấy phép kinh doanh số :            16D 800057 ;                           MST : 5200 241 869",
+      "kind": "body"
+    },
+    {
+      "text": "Chúng tôi cùng nhau bàn bạc, thống nhất hợp đồng thỏa thuận với các điều khoản sau :",
+      "kind": "body"
+    },
+    {
+      "text": "* Quyền lợi và nghĩa vụ của bên A :",
+      "kind": "section"
+    },
+    {
+      "text": "- Ông (bà): {borrowerName} vay của ông Nguyễn Văn Toàn",
+      "kind": "body"
+    },
+    {
+      "text": "Số tiền mặt là: {amount} đồng.",
+      "kind": "body"
+    },
+    {
+      "text": "Bằng chữ: {amountWords}.",
+      "kind": "body"
+    },
+    {
+      "text": "- Tài sản thế chấp của bên A là: {asset}",
+      "kind": "body"
+    },
+    {
+      "text": "- Người ủy quyền cho bên A là: {authorizedPerson}",
+      "kind": "body"
+    },
+    {
+      "text": "- Bên A cam đoan tài sản thế chấp của mình là tài sản hợp pháp.",
+      "kind": "body"
+    },
+    {
+      "text": "- Bên A hẹn trong {termDays} ngày (Tức ngày {dueDay} tháng {dueMonth} năm {dueYear}) sẽ thanh toán đủ",
+      "kind": "body"
+    },
+    {
+      "text": "số tiền cả lãi và gốc cho bên B.",
+      "kind": "body"
+    },
+    {
+      "text": "* Quyền lợi và nghĩa vụ của bên B :",
+      "kind": "section"
+    },
+    {
+      "text": "- Bên B đồng ý cho bên A vay tiền và có trách nhiệm bảo quản tài sản cho bên A: không được làm mất và không làm thay đổi trạng thái ban đầu của tài sản.",
+      "kind": "body"
+    },
+    {
+      "text": "- Nếu quá thời hạn trên bên A không thanh toán thì bên B sẽ bán thanh lý tài sản của bên A để thu lại tiền vốn ban đầu. “Chúng tôi đã bàn bạc, thỏa thuận và đi đến ký kết hợp đồng trong trạng thái thần kinh bình thường”.",
+      "kind": "body"
+    },
+    {
+      "text": "- Hợp đồng này được lập thành 02 bản có giá trị pháp lý như nhau, mỗi bên giữ một bản.",
+      "kind": "body"
+    },
+    {
+      "text": "Mậu A, Ngày {loanDay} tháng {loanMonth} năm {loanYear}",
+      "kind": "date"
+    }
+  ],
+  "signatures": [
+    "Bên A\nNgười vay tiền",
+    "Người làm chứng",
+    "Bên B\nNgười cho vay"
+  ],
+  "lenderName": "Nguyễn Văn Toàn"
+}

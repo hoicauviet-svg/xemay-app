@@ -56,17 +56,34 @@ $zip = Join-Path $root 'assets\database_helper\xemay_database_helper_windows.zip
 if (Test-Path $zip) { Remove-Item $zip }
 [System.IO.Compression.ZipFile]::CreateFromDirectory($helperDir, $zip)
 
-if ($pubspec -notmatch 'xemay_database_helper_windows\.zip') {
-  $pubspec = $pubspec.Replace(
-    '    - assets/database_helper/xemay_database_helper',
-    "    - assets/database_helper/xemay_database_helper`r`n    - assets/database_helper/xemay_database_helper_windows.zip"
-  )
+# Exercise the same archive layout that the installed Flutter app extracts.
+python (Join-Path $root 'tool\check_database_helper.py') --zip $zip
+if ($LASTEXITCODE -ne 0) { throw 'Kiem tra bo cong cu sau giai nen that bai.' }
+
+flutter test test/database_settings_test.dart test/cloud_settings_test.dart test/cloud_sync_reminder_test.dart test/app_update_test.dart
+if ($LASTEXITCODE -ne 0) { throw 'Kiem tra cai dat, cloud hoac cap nhat ung dung that bai.' }
+
+# Package only Windows assets, and restore the source manifest afterwards.
+$windowsPubspec = [regex]::Replace($pubspec, '(?m)^    - assets/database_helper/xemay_database_helper(?:_windows\.zip)?\r?\n', '')
+$windowsPubspec = $windowsPubspec.Replace('  assets:', "  assets:`r`n    - assets/database_helper/xemay_database_helper_windows.zip")
+try {
+  [System.IO.File]::WriteAllText($pubspecPath, $windowsPubspec, [System.Text.UTF8Encoding]::new($false))
+  flutter config --enable-windows-desktop
+  flutter build windows --release
+  if ($LASTEXITCODE -ne 0) { throw 'flutter build windows that bai.' }
+} finally {
   [System.IO.File]::WriteAllText($pubspecPath, $pubspec, [System.Text.UTF8Encoding]::new($false))
 }
 
-flutter config --enable-windows-desktop
-flutter build windows --release
-if ($LASTEXITCODE -ne 0) { throw 'flutter build windows that bai.' }
+$release = Join-Path $root 'build\windows\x64\runner\Release'
+foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+  if (-not (Test-Path (Join-Path $release $dll))) { throw "Bo cai thieu thu vien $dll" }
+}
+$bundledZip = Join-Path $release 'data\flutter_assets\assets\database_helper\xemay_database_helper_windows.zip'
+if (-not (Test-Path $bundledZip)) { throw 'Ung dung thieu asset cong cu Windows.' }
+if ((Get-FileHash -Algorithm SHA256 $bundledZip).Hash -ne (Get-FileHash -Algorithm SHA256 $zip).Hash) {
+  throw 'Ung dung dang dong goi sai phien ban cong cu Windows.'
+}
 
 $candidates = @(
   "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",

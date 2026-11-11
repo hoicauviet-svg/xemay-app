@@ -3,7 +3,7 @@ import 'package:intl/intl.dart';
 import '../../controllers/cart_controller.dart';
 import '../../controllers/sales_controller.dart';
 import '../../core/formatters/inventory_formatters.dart';
-import '../widgets/form_popup.dart';
+import 'sales_order_preview_popup.dart';
 import '../widgets/form_section.dart';
 import '../customers/customer_editor_popup.dart';
 import 'sales_customer_picker.dart';
@@ -109,71 +109,11 @@ class _SalesTabState extends State<SalesTab> {
   }
 
   void _preview() {
-    final valid = _form.currentState!.validate();
-    final error = sale.validationError;
-    if (!valid || error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error ?? 'Vui lòng kiểm tra thông tin đơn hàng.'),
-        ),
-      );
-      return;
-    }
-    // Snapshot the draft so the preview always describes exactly this order.
-    final items = sale.cart.items
-        .map((i) => (name: i.name, quantity: i.quantity, total: i.total!))
-        .toList();
-    final customer = sale.customer == null
-        ? 'Đơn bán hàng'
-        : '${sale.customer!['TenKhachHang']} (#${sale.customer!['IdKH']})';
-    final subtotal = sale.subtotal!,
-        discount = sale.discount!,
-        total = sale.total!,
-        paid = sale.paid!,
-        due = sale.due!,
-        change = sale.change!;
+    final data = sale.previewInvoice();
     showDialog<void>(
       context: context,
-      builder: (context) => FormPopup(
-        title: 'Xem trước đơn bán hàng',
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: FormSection(
-            title: customer,
-            children: [
-              Text('Ngày bán: ${DateFormat('dd/MM/yyyy').format(sale.date)}'),
-              if (sale.hasDebt) ...[
-                Text(
-                  'Ngày hẹn thanh toán: ${DateFormat('dd/MM/yyyy').format(sale.paymentDueDate!)}',
-                ),
-                Text(
-                  'Ngày tính lãi: ${DateFormat('dd/MM/yyyy').format(sale.interestDate!)}',
-                ),
-              ],
-              const SizedBox(height: 16),
-              for (final item in items)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(item.name),
-                  subtitle: Text('Số lượng: ${item.quantity}'),
-                  trailing: Text(money(item.total)),
-                ),
-              const Divider(height: 24),
-              _summaryRow('Tiền hàng', money(subtotal)),
-              _summaryRow('Giảm giá', money(discount)),
-              _summaryRow('Tổng thanh toán', money(total), prominent: true),
-              _summaryRow('Khách thanh toán', money(paid)),
-              _summaryRow('Còn phải thu', money(due)),
-              if (change > 0) _summaryRow('Tiền thừa trả khách', money(change)),
-              if (sale.notes.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text('Ghi chú: ${sale.notes}'),
-                ),
-            ],
-          ),
-        ),
-      ),
+      barrierDismissible: false,
+      builder: (_) => SalesOrderPreviewPopup(data: data),
     );
   }
 
@@ -932,9 +872,7 @@ class _SalesTabState extends State<SalesTab> {
               SizedBox(
                 height: 48,
                 child: OutlinedButton.icon(
-                  onPressed: sale.cart.items.isEmpty || sale.saving
-                      ? null
-                      : _preview,
+                  onPressed: sale.saving ? null : _preview,
                   icon: const Icon(Icons.visibility_outlined, size: 20),
                   label: const Text('Xem trước đơn hàng'),
                 ),
@@ -1033,36 +971,5 @@ class _SalesTabState extends State<SalesTab> {
             ),
           ),
         ],
-      );
-
-  Widget _summaryRow(String label, String value, {bool prominent = false}) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: prominent ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                value,
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: prominent ? _green : const Color(0xFF1D3036),
-                ),
-              ),
-            ),
-          ],
-        ),
       );
 }

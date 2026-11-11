@@ -1,3 +1,4 @@
+import 'customer_address_migration.dart';
 import '../models/maintenance/record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import '../core/config/database_config.dart';
@@ -8,11 +9,16 @@ class MongoReportsRepository implements ReportsRepository {
   MongoReportsRepository({String? uri})
     : _db = Db(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
+  bool _addressesReady = false;
   Future<void>? _opening;
   Future<void> _connect() =>
       _opening ??= _open().whenComplete(() => _opening = null);
   Future<void> _open() async {
     if (!_db.isConnected) await _db.open();
+    if (!_addressesReady) {
+      await migrateCustomerAddresses(_db);
+      _addressesReady = true;
+    }
   }
 
   Future<List<Map<String, dynamic>>> _read(
@@ -57,7 +63,6 @@ class MongoReportsRepository implements ReportsRepository {
       'ChiTietNhapHang',
       'DoiTac',
       'VanChuyen',
-      'Xa',
       'TraNo',
       'TraNoNhapHang',
       'TraNoCu',
@@ -174,13 +179,19 @@ class MongoReportsRepository implements ReportsRepository {
         'TenKhachHang',
         'SoDienThoai',
         'DiaChiChiTiet',
-        'IdXa',
       ]),
       _read('DichVu', ['_id', 'TenDichVu']),
-      _read('ChiTietNhapHang', ['IdXe', 'IdSanPham', 'ChiPhi', 'TongChiPhi']),
+      _read('ChiTietNhapHang', [
+        'IdNhapHang',
+        'SoLuong',
+        'IdXe',
+        'IdSanPham',
+        'GiaNhap',
+        'ChiPhi',
+        'TongChiPhi',
+      ]),
       _read('DoiTac', ['_id', 'TenDoiTac', 'SoDienThoai', 'DiaChi']),
       _read('VanChuyen', ['_id', 'TenVanChuyen']),
-      _read('Xa', ['IdXa', 'TenXa']),
       _read('TraNo', [
         'IdTraNo',
         'IdSoNo',

@@ -1,3 +1,4 @@
+import '../../models/customers/customer_models.dart';
 import '../pawn/pawn_tab.dart';
 import '../../models/repositories/pawn_repository.dart';
 import '../orders/order_details_screen.dart';
@@ -114,6 +115,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
                           _value(customer['TenKhachHang']),
                         ),
                         _info('Số điện thoại', _value(customer['SoDienThoai'])),
+                        _info('CCCD', _value(customer['SoCCCD'])),
+                        _info('CMND', _value(customer['SoCMND'])),
+                        _info(
+                          'Ngày cấp',
+                          CustomerDraft.formatIssueDate(customer['NgayCap']),
+                        ),
+                        _info('Nơi cấp', _value(customer['NoiCap'])),
                         _info(
                           'Địa chỉ chi tiết',
                           _value(customer['DiaChiHienThi']),

@@ -10,9 +10,17 @@ abstract class DatabaseSettingsRepository {
     required String sqlConnection,
     required void Function(String) progress,
   });
+  Future<CloudComparison> compareCloud({
+    required String sourceUri,
+    required String targetUri,
+    void Function(String)? progress,
+  });
   Future<CloudSyncResult> syncCloud({
     required String sourceUri,
     required String targetUri,
+    required String expectedSourceVersion,
+    required String expectedTargetVersion,
+    required String conflictPolicy,
     required void Function(String) progress,
   });
   Future<void> openMongoInstallation();

@@ -6,11 +6,13 @@ import 'package:xemay_app/models/pawn/pawn_models.dart';
 import 'package:xemay_app/models/repositories/pawn_repository.dart';
 import 'package:xemay_app/views/pawn/pawn_editor_popup.dart';
 import 'package:xemay_app/views/pawn/pawn_tab.dart';
+import 'package:xemay_app/views/printing/pawn_contract_screen.dart';
 import 'support/fake_customer_repository.dart';
 import 'support/fake_sales_repository.dart';
 
 class _Repository extends PawnRepository {
   Map<String, dynamic>? saved;
+  int createCalls = 0;
   @override
   Future<PawnPage> fetch({
     String search = '',
@@ -32,6 +34,7 @@ class _Repository extends PawnRepository {
   );
   @override
   Future<int> create(PawnDraft draft, {required String requestId}) async {
+    createCalls++;
     saved = draft.toFields();
     return 100;
   }
@@ -135,6 +138,58 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('Save and print opens saved contract without a second create', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = _Repository();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PawnTab(repository: repo, customers: FakeCustomerRepository()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pawn-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pawn-customer')),
+      'Khách',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pawn-customer-option-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pawn-amount')),
+      '5000000',
+    );
+    await tester.enterText(find.byKey(const ValueKey('pawn-rate')), '2000');
+    await tester.enterText(find.byKey(const ValueKey('pawn-asset')), 'Xe máy');
+    await tester.tap(find.byKey(const ValueKey('pawn-due-date-null')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lưu & in hợp đồng'));
+    await tester.pumpAndSettle();
+    expect(repo.createCalls, 1);
+    expect(find.byType(PawnContractScreen), findsOneWidget);
+    expect(find.text('In hợp đồng cầm đồ #100'), findsOneWidget);
+    await tester.tap(find.byTooltip('Quay lại'));
+    await tester.pumpAndSettle();
+    expect(repo.createCalls, 1);
+    expect(repo.saved, isNotNull);
+    await tester.tap(find.text('#100'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'In hợp đồng'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PawnContractScreen), findsOneWidget);
+    expect(repo.createCalls, 1);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('New customer is selected automatically in pawn form', (
     tester,
   ) async {
