@@ -100,7 +100,9 @@ class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup>
     0,
     () => _invoice,
     widget.data.fileName,
-    'Không in được hóa đơn. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
+    widget.data.saved
+        ? 'Không in được hóa đơn. Kiểm tra máy in và thử lại. Đơn #${widget.data.invoiceId} đã được lưu.'
+        : 'Không in được hóa đơn. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
   );
 
   Future<void> _printContract() {
@@ -109,7 +111,9 @@ class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup>
       1,
       () => _contract!,
       SaleContractData(widget.data).fileName,
-      'Không in được hợp đồng mua bán. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
+      widget.data.saved
+          ? 'Không in được hợp đồng mua bán. Kiểm tra máy in và thử lại. Đơn #${widget.data.invoiceId} đã được lưu.'
+          : 'Không in được hợp đồng mua bán. Kiểm tra máy in và thử lại; đơn đang nhập vẫn được giữ nguyên.',
     );
   }
 
@@ -117,7 +121,9 @@ class _SalesOrderPreviewPopupState extends State<SalesOrderPreviewPopup>
   Widget build(BuildContext context) => PopScope(
     canPop: !_printing,
     child: FormPopup(
-      title: 'Xem trước đơn bán hàng',
+      title: widget.data.saved
+          ? 'Đơn hàng #${widget.data.invoiceId}'
+          : 'Xem trước đơn bán hàng',
       canClose: !_printing,
       child: Column(
         children: [

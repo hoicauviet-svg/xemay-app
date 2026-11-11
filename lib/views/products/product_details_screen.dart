@@ -19,9 +19,11 @@ class ProductDetailsScreen extends StatefulWidget {
     super.key,
     required this.product,
     this.repository,
+    this.initialTab = 0,
   });
   final ProductReference product;
   final ProductDetailsRepository? repository;
+  final int initialTab;
   @override
   State<ProductDetailsScreen> createState() => _ProductDetailsScreenState();
 }
@@ -33,7 +35,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(
+      length: 5,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 4),
+    );
     _controller = ProductDetailsController(
       widget.repository ?? MongoProductDetailsRepository(),
       widget.product,
@@ -65,8 +71,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Thêm chi phí thành công')));
-    _tabs.animateTo(3);
-    await _controller.load();
+    if (_tabs.index != 3) _tabs.index = 3;
+    try {
+      await _controller.load(silent: true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã lưu chi phí nhưng chưa tải lại được danh sách.'),
+        ),
+      );
+    }
   }
 
   bool _editing = false;
@@ -115,6 +130,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     } finally {
       if (mounted) setState(() => _editing = false);
     }
+  }
+
+  String? _costNote(ProductDetails details) {
+    final info = details.information;
+    if (widget.product.vehicle && info['TinhTrang'] == false) {
+      return 'Xe đã bán. Chi phí vẫn được ghi nhận và tính vào lợi nhuận.';
+    }
+    final stock = info['SoLuongTon'];
+    if (!widget.product.vehicle && stock is num && stock <= 0) {
+      return 'Phụ tùng đã hết hàng. Chi phí vẫn được ghi nhận.';
+    }
+    return null;
   }
 
   String _value(dynamic v) => v == null || '$v'.trim().isEmpty ? '—' : '$v';
@@ -188,7 +215,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                         showPartner: true,
                       ),
                       _costs(_controller.data!),
-                      ProductCostForm(onSave: _saveCost),
+                      ProductCostForm(
+                        onSave: _saveCost,
+                        note: _costNote(_controller.data!),
+                      ),
                     ],
                   ),
           ),
@@ -235,11 +265,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         cost,
         requestId: ObjectId().oid,
       );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Đã xóa chi phí')));
-        await _controller.load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã xóa chi phí')));
+      try {
+        await _controller.load(silent: true);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Đã xóa chi phí nhưng chưa tải lại được danh sách.'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted)
@@ -303,6 +341,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ? const Center(child: Text('Chưa có chi phí.'))
               : ScrollableDataTable(
                   fixedHeader: true,
+                  fitWidth: true,
+                  columnWidths: const [150, 170, 280, 110],
                   columns: const [
                     DataColumn(label: Text('NGÀY')),
                     DataColumn(label: Text('SỐ TIỀN')),
@@ -310,23 +350,36 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                     DataColumn(label: Text('')),
                   ],
                   rows: [
-                    for (final c in details.costs)
+                    for (var i = 0; i < details.costs.length; i++)
                       DataRow(
                         cells: [
-                          DataCell(Text(_date(c['Ngay']))),
-                          DataCell(Text(money(c['SoTien']))),
-                          DataCell(Text(_value(c['GhiChu']))),
+                          DataCell(Text(_date(details.costs[i]['Ngay']))),
+                          DataCell(Text(money(details.costs[i]['SoTien']))),
+                          DataCell(Text(_value(details.costs[i]['GhiChu']))),
                           DataCell(
-                            IconButton(
-                              tooltip: 'Xóa chi phí',
-                              onPressed:
-                                  _editing ||
-                                      _controller.repository.maintenance == null
-                                  ? null
-                                  : () => _deleteCost(c),
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: Color(0xFFB44141),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Tooltip(
+                                message: 'Xóa chi phí',
+                                child: TextButton(
+                                  key: ValueKey('delete-product-cost-$i'),
+                                  style: TextButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    minimumSize: const Size(64, 36),
+                                  ),
+                                  onPressed:
+                                      _editing ||
+                                          _controller.repository.maintenance ==
+                                              null
+                                      ? null
+                                      : () => _deleteCost(details.costs[i]),
+                                  child: const Text(
+                                    'Xóa',
+                                    style: TextStyle(color: Color(0xFFB44141)),
+                                  ),
+                                ),
                               ),
                             ),
                           ),

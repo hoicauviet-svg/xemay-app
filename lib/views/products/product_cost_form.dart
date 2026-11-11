@@ -5,7 +5,7 @@ import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
 import '../widgets/form_section.dart';
 
 class ProductCostForm extends StatefulWidget {
-  const ProductCostForm({super.key, required this.onSave});
+  const ProductCostForm({super.key, required this.onSave, this.note});
   final Future<void> Function(
     DateTime date,
     int amount,
@@ -13,6 +13,7 @@ class ProductCostForm extends StatefulWidget {
     String requestId,
   )
   onSave;
+  final String? note;
   @override
   State<ProductCostForm> createState() => _ProductCostFormState();
 }
@@ -53,11 +54,18 @@ class _ProductCostFormState extends State<ProductCostForm> {
         _notes.clear();
         _date = DateTime.now();
       });
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
+        final text = '$error'.trim();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Chưa xác nhận lưu chi phí. Bấm Lưu để thử lại.'),
+          SnackBar(
+            content: Text(
+              text.isEmpty
+                  ? 'Chưa xác nhận lưu chi phí. Bấm Lưu để thử lại.'
+                  : text.startsWith('Bad state: ')
+                  ? text.substring('Bad state: '.length)
+                  : text,
+            ),
           ),
         );
       }
@@ -74,6 +82,10 @@ class _ProductCostFormState extends State<ProductCostForm> {
       child: FormSection(
         title: null,
         children: [
+          if (widget.note != null) ...[
+            Text(widget.note!, style: const TextStyle(color: Color(0xFF6E7D83))),
+            const SizedBox(height: 16),
+          ],
           AbsorbPointer(
             absorbing: _pending != null,
             child: Column(

@@ -310,7 +310,28 @@ void main() {
       expect(total.left, closeTo(heading.left, 0.1));
       expect(total.top, greaterThan(heading.bottom));
     }
-    expect(find.text('Số đơn'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('fixed-table-heading')),
+        matching: find.text('Số đơn'),
+      ),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('sales-order-chart')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sales-revenue-pie')), findsOneWidget);
+    expect(
+      t.getSize(find.byKey(const ValueKey('sales-order-chart'))).height,
+      t.getSize(find.byKey(const ValueKey('sales-revenue-pie'))).height,
+    );
+    for (final label in ['Xe mới', 'Xe cũ', 'Phụ tùng', 'Dịch vụ']) {
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sales-revenue-pie')),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+      );
+    }
     expect(t.takeException(), isNull);
   });
   testWidgets(

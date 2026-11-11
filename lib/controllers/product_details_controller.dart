@@ -9,21 +9,30 @@ class ProductDetailsController extends ChangeNotifier {
   ProductDetails? data;
   bool loading = false, saving = false, _disposed = false;
   String? error;
-  Future<void> load() async {
-    loading = true;
-    error = null;
-    notifyListeners();
+  Future<void> load({bool silent = false}) async {
+    final keepVisible = silent && data != null;
+    if (!keepVisible) {
+      loading = true;
+      error = null;
+      notifyListeners();
+    }
     try {
       final result = await repository.load(product);
-      if (!_disposed) data = result;
+      if (_disposed) return;
+      data = result;
+      error = null;
     } catch (_) {
-      if (!_disposed) {
+      if (_disposed) return;
+      if (data == null) {
         error = 'Không tải được chi tiết sản phẩm. Vui lòng thử lại.';
+      } else if (keepVisible) {
+        rethrow;
       }
-    }
-    if (!_disposed) {
-      loading = false;
-      notifyListeners();
+    } finally {
+      if (!_disposed) {
+        loading = false;
+        notifyListeners();
+      }
     }
   }
 

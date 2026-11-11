@@ -415,7 +415,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byKey(const ValueKey('reports-overview')), findsOneWidget);
       expect(find.text('Hiện tại'), findsNothing);
-      expect(find.text('Chi tiết'), findsNWidgets(4));
+      expect(find.text('Chi tiết'), findsNWidgets(9));
       expect(find.text('Thu trả nợ'), findsOneWidget);
       expect(find.text('Chi trả nợ'), findsOneWidget);
       await t.drag(
@@ -543,6 +543,29 @@ void main() {
       await t.pumpAndSettle();
       expect(find.byKey(const ValueKey('reports-overview')), findsOneWidget);
       expect(find.text('Doanh thu'), findsOneWidget);
+      expect(
+        t.getRect(find.byKey(const ValueKey('report-date-range'))).left,
+        closeTo(16, 1),
+      );
+      final overview = t.getSize(
+        find.byKey(const ValueKey('reports-overview')),
+      );
+      final sales = t.getSize(
+        find.byKey(const ValueKey('overview-card-sales')),
+      );
+      expect(sales.width, closeTo(overview.width - 32, 1));
+      await t.tap(find.byKey(const ValueKey('overview-toggle-sales')));
+      await t.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('overview-summary-sales')),
+        findsNothing,
+      );
+      await t.tap(find.byKey(const ValueKey('overview-toggle-sales')));
+      await t.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('overview-summary-sales')),
+        findsOneWidget,
+      );
       await t.tap(
         find.descendant(
           of: find.byKey(const ValueKey('reports-overview')),

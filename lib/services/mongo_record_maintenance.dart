@@ -81,6 +81,51 @@ class MongoRecordMaintenance implements RecordMaintenance {
     ),
   };
   Never fail(String text) => throw RecordChangeException(text);
+  bool _sameId(dynamic value, int id) =>
+      value == id || (value is num && value.toDouble() == id.toDouble());
+  bool _sameCost(Map<String, dynamic> stored, Map<String, dynamic> requested) {
+    final requestKey = requested['MaYeuCau'];
+    if (requestKey != null && stored['MaYeuCau'] == requestKey) return true;
+    final storedAmount = stored['SoTien'];
+    final requestedAmount = requested['SoTien'];
+    final sameAmount =
+        storedAmount == requestedAmount ||
+        (storedAmount is num &&
+            requestedAmount is num &&
+            storedAmount.toDouble() == requestedAmount.toDouble());
+    return sameAmount &&
+        _sameTime(stored['Ngay'], requested['Ngay']) &&
+        '${stored['GhiChu'] ?? ''}'.trim() ==
+            '${requested['GhiChu'] ?? ''}'.trim();
+  }
+
+  bool _sameTime(dynamic stored, dynamic requested) {
+    if (stored is DateTime && requested is DateTime) {
+      final left = stored.toUtc();
+      final right = requested.toUtc();
+      return left.millisecondsSinceEpoch == right.millisecondsSinceEpoch;
+    }
+    return stored == requested;
+  }
+
+  int _costIndex(
+    List<Map<String, dynamic>> entries,
+    Map<String, dynamic> cost,
+  ) {
+    final hinted = cost['_CostIndex'];
+    if (hinted is int &&
+        hinted >= 0 &&
+        hinted < entries.length &&
+        entries[hinted]['DaXoa'] != true &&
+        _sameCost(entries[hinted], cost)) {
+      return hinted;
+    }
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i]['DaXoa'] != true && _sameCost(entries[i], cost)) return i;
+    }
+    return -1;
+  }
+
   num number(dynamic value) {
     if (value is! num || !value.isFinite || value < 0 || value > 1e15) {
       fail('Số tiền hoặc số lượng chưa hợp lệ, cần đối soát dữ liệu.');
@@ -1264,22 +1309,18 @@ class MongoRecordMaintenance implements RecordMaintenance {
       if (!['Xe', 'SanPham', 'ChiTietNhapHang'].contains(source))
         fail('Không xác định được nguồn chi phí. Tải lại sản phẩm.');
       final row = await db.collection(source).findOne({'_id': sourceId});
-      if (row == null || row[vehicle ? 'IdXe' : 'IdSanPham'] != productId)
+      final owner = row?[vehicle ? 'IdXe' : 'IdSanPham'];
+      if (row == null || !_sameId(owner, productId))
         fail('Chi phí không thuộc sản phẩm này.');
       await lock(source, row);
-      final index = cost['_CostIndex'];
       final entries = [
         for (final raw in row['ChiPhi'] as List? ?? [])
           Map<String, dynamic>.from(raw as Map),
       ];
-      if (index is! int || index < 0 || index >= entries.length)
-        fail('Chi phí không còn tồn tại.');
+      final index = _costIndex(entries, cost);
+      if (index < 0) fail('Chi phí không còn tồn tại. Tải lại danh sách.');
       final selected = entries[index];
       if (selected['DaXoa'] == true) return <Map<String, dynamic>>[];
-      if (selected['SoTien'] != cost['SoTien'] ||
-          selected['Ngay'] != cost['Ngay'] ||
-          selected['GhiChu'] != cost['GhiChu'])
-        fail('Chi phí vừa thay đổi. Tải lại trước khi xóa.');
       entries[index] = {
         ...selected,
         'DaXoa': true,
@@ -1305,12 +1346,10 @@ class MongoRecordMaintenance implements RecordMaintenance {
             for (final raw in detail['ChiPhi'] as List? ?? [])
               Map<String, dynamic>.from(raw as Map),
           ];
-          if (index < mirrors.length &&
-              mirrors[index]['Ngay'] == selected['Ngay'] &&
-              mirrors[index]['SoTien'] == selected['SoTien'] &&
-              mirrors[index]['GhiChu'] == selected['GhiChu']) {
+          final mirrorIndex = _costIndex(mirrors, selected);
+          if (mirrorIndex >= 0) {
             await lock('ChiTietNhapHang', detail);
-            mirrors[index] = {...mirrors[index], 'DaXoa': true};
+            mirrors[mirrorIndex] = {...mirrors[mirrorIndex], 'DaXoa': true};
             ops.add(
               op('ChiTietNhapHang', detail['_id'], {
                 'ChiPhi': mirrors,

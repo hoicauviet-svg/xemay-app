@@ -1,4 +1,5 @@
 import 'reports_overview_view.dart';
+import 'sales_charts.dart';
 import 'cash_category_report_view.dart';
 import '../../models/dashboard/dashboard_module.dart';
 import '../../services/report_excel_service.dart';
@@ -484,7 +485,10 @@ class _ReportsViewState extends State<ReportsView>
           ),
       ],
     );
-    if (_sectionReport(kind) || kind == ReportKind.overview) return controls;
+    if (kind == ReportKind.overview) {
+      return Align(alignment: Alignment.centerLeft, child: controls);
+    }
+    if (_sectionReport(kind)) return controls;
     return LayoutBuilder(
       builder: (context, bounds) {
         if (bounds.maxWidth < 700) {
@@ -513,26 +517,11 @@ class _ReportsViewState extends State<ReportsView>
   }
 
   Widget _body(ReportKind kind) {
-    if (_controller.loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_controller.error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_controller.error!),
-            TextButton(
-              onPressed: _controller.load,
-              child: const Text('Thử lại'),
-            ),
-          ],
-        ),
-      );
-    }
-    if (kind == ReportKind.overview && _controller.data != null) {
+    if (kind == ReportKind.overview &&
+        (_controller.loading || _controller.data != null)) {
       return ReportsOverviewView(
-        data: _controller.data!,
+        data: _controller.data,
+        loading: _controller.loading,
         onOpen: (target) {
           if (target == ReportKind.sales || target == ReportKind.receipts) {
             _controller.setProductGroup(target, ReportProductGroup.all);
@@ -557,6 +546,23 @@ class _ReportsViewState extends State<ReportsView>
         },
       );
     }
+    if (_controller.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_controller.error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_controller.error!),
+            TextButton(
+              onPressed: _controller.load,
+              child: const Text('Thử lại'),
+            ),
+          ],
+        ),
+      );
+    }
     final section = _controller.section(kind);
     if (section == null) return const SizedBox.shrink();
     final rows = section.rows;
@@ -567,6 +573,20 @@ class _ReportsViewState extends State<ReportsView>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (kind == ReportKind.sales) ...[
+            SalesCharts(
+              orders:
+                  _controller.data?.sections[ReportKind.sales]?.rows ??
+                  const [],
+              revenue: {
+                for (final group in SalesCharts.groups)
+                  group: _controller
+                      .data
+                      ?.salesByGroup[group]
+                      ?.totals['Doanh thu'],
+              },
+            ),
+          ],
           if (kind == ReportKind.sales)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),

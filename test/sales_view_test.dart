@@ -224,12 +224,16 @@ void main() {
       final preview = find.text('Xem trước đơn hàng');
       await tester.ensureVisible(preview);
       await tester.tap(preview);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       expect(find.text('Xem trước đơn bán hàng'), findsOneWidget);
-      expect(find.text('Khách mới (#2)'), findsOneWidget);
+      expect(find.widgetWithText(Tab, 'Hóa đơn'), findsOneWidget);
+      expect(find.widgetWithText(Tab, 'Hợp đồng'), findsOneWidget);
+      expect(find.byKey(const ValueKey('print-sales-invoice')), findsOneWidget);
       expect(find.text('400.000 đ'), findsWidgets);
       expect(cart.items.length, 1);
       expect(repository.rows.length, 2);
+      await tester.pumpWidget(const SizedBox.shrink());
       expect(tester.takeException(), isNull);
     },
   );
@@ -306,11 +310,21 @@ void main() {
     expect(sale.due, 0);
     await tester.ensureVisible(find.text('Lưu đơn hàng'));
     await tester.tap(find.text('Lưu đơn hàng'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
     expect(saved.lastDraft!.lines.single.kind, 'dich_vu');
     expect(saved.lastDraft!.paid, 400000);
     expect(cart.items, isEmpty);
     expect(sale.lastSavedId, 501);
+    expect(find.text('Đơn hàng #501'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Hóa đơn'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Hợp đồng'), findsOneWidget);
+    expect(find.byKey(const ValueKey('print-sales-invoice')), findsOneWidget);
+    await tester.tap(find.widgetWithText(Tab, 'Hợp đồng'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byKey(const ValueKey('print-sale-contract')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
     expect(tester.takeException(), isNull);
   });
 }

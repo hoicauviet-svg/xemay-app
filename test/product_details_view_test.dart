@@ -6,6 +6,8 @@ import 'package:xemay_app/models/repositories/product_details_repository.dart';
 import 'package:xemay_app/views/products/product_details_screen.dart';
 
 class _Repository extends ProductDetailsRepository {
+  _Repository({this.sold = false});
+  final bool sold;
   final costs = <Map<String, dynamic>>[];
   int saves = 0;
   @override
@@ -14,7 +16,7 @@ class _Repository extends ProductDetailsRepository {
       'IdXe': 7,
       'TenXe': 'Xe chi tiết',
       'TinhTrangXe': 'moi',
-      'TinhTrang': true,
+      'TinhTrang': !sold,
       'GiaNhap': 10000000,
       'SoKhung': 'KHUNG-7',
     },
@@ -122,6 +124,42 @@ void main() {
     await tester.tap(find.widgetWithText(Tab, 'Thêm chi phí'));
     await tester.pumpAndSettle();
     expect(find.text('Lưu chi phí'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Sold product still saves a cost', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = _Repository(sold: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: ProductDetailsScreen(
+          product: const ProductReference(id: 7, vehicle: true),
+          repository: repo,
+          initialTab: 4,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Xe đã bán. Chi phí vẫn được ghi nhận và tính vào lợi nhuận.'),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('product-cost-amount')),
+      '50000',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('product-cost-notes')),
+      'Chi phí sau bán',
+    );
+    await tester.tap(find.text('Lưu chi phí'));
+    await tester.pumpAndSettle();
+    expect(repo.saves, 1);
+    expect(find.text('Thêm chi phí thành công'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

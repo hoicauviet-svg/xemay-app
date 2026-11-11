@@ -400,12 +400,25 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
       'GhiChu': notes.trim(),
       'MaYeuCau': requestId,
     };
+    // $ne on an array field still matches when another cost has a different
+    // request id, so a retry of the second cost would be inserted again.
     final result = await collection.updateOne(
       {
         ..._identity(product),
         'DaXoa': {r'$ne': true},
         'SuaXoaDangLuu': null,
-        'ChiPhi.MaYeuCau': {r'$ne': requestId},
+        r'$or': [
+          {
+            'ChiPhi': {r'$exists': false},
+          },
+          {
+            'ChiPhi': {
+              r'$not': {
+                r'$elemMatch': {'MaYeuCau': requestId},
+              },
+            },
+          },
+        ],
       },
       {
         r'$push': {'ChiPhi': cost},
@@ -416,13 +429,23 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
       throw StateError('Chưa xác nhận lưu chi phí');
     }
     if (result.nMatched == 0) {
-      final row = await collection.findOne({
+      final saved = await collection.findOne({
         ..._identity(product),
         'DaXoa': {r'$ne': true},
-        'ChiPhi': {r'$elemMatch': cost},
+        'ChiPhi': {
+          r'$elemMatch': {'MaYeuCau': requestId},
+        },
       });
-      if (row == null) {
-        throw StateError('Sản phẩm không còn tồn tại hoặc phiếu đã thay đổi');
+      if (saved == null) {
+        final current = await collection.findOne({
+          ..._identity(product),
+          'DaXoa': {r'$ne': true},
+        });
+        if (current == null) throw StateError('Sản phẩm không còn tồn tại.');
+        if (current['SuaXoaDangLuu'] != null) {
+          throw StateError('Sản phẩm đang được xử lý. Vui lòng thử lại sau.');
+        }
+        throw StateError('Chưa lưu được chi phí. Vui lòng thử lại.');
       }
     }
     await MongoProductCash.record(

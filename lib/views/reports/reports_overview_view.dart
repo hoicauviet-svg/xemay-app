@@ -8,14 +8,12 @@ class _OverviewBlock {
   const _OverviewBlock(
     this.title,
     this.kind, {
-    this.linkLabel = false,
     this.summary = const [],
     this.details = const [],
     this.stockRows,
   });
   final String title;
   final ReportKind kind;
-  final bool linkLabel;
   final List<_Metric> summary, details;
   final List<List<dynamic>>? stockRows;
 }
@@ -25,8 +23,10 @@ class ReportsOverviewView extends StatelessWidget {
     super.key,
     required this.data,
     required this.onOpen,
+    this.loading = false,
   });
-  final ReportsData data;
+  final ReportsData? data;
+  final bool loading;
   final ValueChanged<ReportKind> onOpen;
 
   num? _sum(Iterable<num?> values) {
@@ -85,14 +85,14 @@ class ReportsOverviewView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Map<String, num?> totals(ReportKind kind) =>
-        data.sections[kind]?.totals ?? {};
+        data?.sections[kind]?.totals ?? {};
     final sales = totals(ReportKind.sales),
         receipts = totals(ReportKind.receipts),
         debts = totals(ReportKind.debts),
         cash = totals(ReportKind.cash),
         pawn = totals(ReportKind.pawnDebt);
     final stockRows =
-        data.sections[ReportKind.stock]?.rows ?? <List<dynamic>>[];
+        data?.sections[ReportKind.stock]?.rows ?? <List<dynamic>>[];
     const groups = [
       ReportProductGroup.newVehicles,
       ReportProductGroup.usedVehicles,
@@ -104,10 +104,10 @@ class ReportsOverviewView extends StatelessWidget {
       ReportProductGroup group,
       String key,
     ) => sections.containsKey(group) ? sections[group]!.totals[key] : 0;
-    final cashCategories = data.sections[ReportKind.cash] == null
+    final cashCategories = data?.sections[ReportKind.cash] == null
         ? <List<dynamic>>[]
         : ReportCalculator.cashCategoryTotals(
-            data.sections[ReportKind.cash]!,
+            data!.sections[ReportKind.cash]!,
           ).rows;
     List<_Metric> aging(ReportDebtAging value) => [
       ('Trong hạn', value.within, true),
@@ -174,7 +174,12 @@ class ReportsOverviewView extends StatelessWidget {
           for (final group in groups)
             (
               group.label,
-              groupTotal(data.salesByGroup, group, 'Doanh thu'),
+              groupTotal(
+                data?.salesByGroup ??
+                    const <ReportProductGroup, ReportSection>{},
+                group,
+                'Doanh thu',
+              ),
               true,
             ),
         ],
@@ -192,7 +197,12 @@ class ReportsOverviewView extends StatelessWidget {
           for (final group in groups)
             (
               group.label,
-              groupTotal(data.receiptsByGroup, group, 'Tiền nhập'),
+              groupTotal(
+                data?.receiptsByGroup ??
+                    const <ReportProductGroup, ReportSection>{},
+                group,
+                'Tiền nhập',
+              ),
               true,
             ),
         ],
@@ -200,7 +210,6 @@ class ReportsOverviewView extends StatelessWidget {
       _OverviewBlock(
         'Tồn kho',
         ReportKind.stock,
-        linkLabel: true,
         summary: [
           ('Tổng giá trị', _sum(stockRows.map((r) => r[2] as num?)), true),
         ],
@@ -209,20 +218,18 @@ class ReportsOverviewView extends StatelessWidget {
       _OverviewBlock(
         'Khách hàng nợ',
         ReportKind.customerDebt,
-        linkLabel: true,
         summary: [
           ('Tổng nợ', _sum([debts['Khách nợ bán hàng'], debts['Nợ cũ']]), true),
         ],
         details: [
           ('Nợ bán hàng', debts['Khách nợ bán hàng'], true),
           ('Nợ cũ', debts['Nợ cũ'], true),
-          ...aging(data.customerAging),
+          ...aging(data?.customerAging ?? const ReportDebtAging()),
         ],
       ),
       _OverviewBlock(
         'Nợ đối tác',
         ReportKind.supplierDebt,
-        linkLabel: true,
         summary: [
           ('Tổng nợ', _sum([debts['Nợ nhà cung cấp'], debts['Vay vốn']]), true),
         ],
@@ -243,7 +250,6 @@ class ReportsOverviewView extends StatelessWidget {
       _OverviewBlock(
         'Cầm đồ',
         ReportKind.pawn,
-        linkLabel: true,
         summary: [
           ('Phiếu đang cầm', pawn['Phiếu đang cầm'], false),
           ('Tiền vay', pawn['Tiền vay'], true),
@@ -254,7 +260,7 @@ class ReportsOverviewView extends StatelessWidget {
             true,
           ),
         ],
-        details: aging(data.pawnAging),
+        details: aging(data?.pawnAging ?? const ReportDebtAging()),
       ),
       _OverviewBlock(
         'Thu trả nợ',
@@ -269,116 +275,172 @@ class ReportsOverviewView extends StatelessWidget {
         details: paidDebts,
       ),
     ];
-    return LayoutBuilder(
-      builder: (context, bounds) {
-        final columns = bounds.maxWidth >= 1100
-            ? 3
-            : bounds.maxWidth >= 700
-            ? 2
-            : 1;
-        final width = (bounds.maxWidth - 32 - 12 * (columns - 1)) / columns;
-        return SingleChildScrollView(
-          key: const ValueKey('reports-overview'),
-          padding: const EdgeInsets.all(16),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final block in blocks)
-                SizedBox(
-                  key: ValueKey('overview-card-${block.kind.name}'),
-                  width: width,
-                  child: Material(
-                    color: Colors.white,
-                    clipBehavior: Clip.antiAlias,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: const BorderSide(color: Color(0xFFE5EAED)),
+    return SingleChildScrollView(
+      key: const ValueKey('reports-overview'),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          for (final block in blocks) ...[
+            _OverviewCard(
+              block: block,
+              ready: data != null && !loading,
+              onOpen: () => onOpen(block.kind),
+              summary: Column(
+                key: ValueKey('overview-summary-${block.kind.name}'),
+                children: [for (final metric in block.summary) _metric(metric)],
+              ),
+              details: block.details.isEmpty && block.stockRows == null
+                  ? null
+                  : Column(
+                      key: ValueKey('overview-details-${block.kind.name}'),
+                      children: [
+                        for (final metric in block.details) _metric(metric),
+                        if (block.stockRows case final rows?) ...[
+                          _stockRow(
+                            'Nhóm',
+                            'Số lượng',
+                            'Giá trị',
+                            header: true,
+                          ),
+                          for (final row in rows)
+                            _stockRow(
+                              '${row[0]}',
+                              row[1] == null ? '' : quantity(row[1] as num),
+                              row[2] == null ? '' : money(row[2] as num),
+                            ),
+                        ],
+                      ],
                     ),
-                    child: InkWell(
-                      onTap: () => onOpen(block.kind),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    block.title,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF176455),
-                                    ),
-                                  ),
-                                ),
-                                if (block.linkLabel)
-                                  const Text(
-                                    'Chi tiết',
-                                    style: TextStyle(color: Color(0xFF65736B)),
-                                  ),
-                                const Icon(Icons.chevron_right, size: 20),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Column(
-                              key: ValueKey(
-                                'overview-summary-${block.kind.name}',
-                              ),
-                              children: [
-                                for (final metric in block.summary)
-                                  _metric(metric),
-                              ],
-                            ),
-                            if (block.details.isNotEmpty ||
-                                block.stockRows != null) ...[
-                              Divider(
-                                key: ValueKey(
-                                  'overview-divider-${block.kind.name}',
-                                ),
-                                height: 24,
-                                color: const Color(0xFFE5EAED),
-                              ),
-                              Column(
-                                key: ValueKey(
-                                  'overview-details-${block.kind.name}',
-                                ),
-                                children: [
-                                  for (final metric in block.details)
-                                    _metric(metric),
-                                  if (block.stockRows case final rows?) ...[
-                                    _stockRow(
-                                      'Nhóm',
-                                      'Số lượng',
-                                      'Giá trị',
-                                      header: true,
-                                    ),
-                                    for (final row in rows)
-                                      _stockRow(
-                                        '${row[0]}',
-                                        row[1] == null
-                                            ? ''
-                                            : quantity(row[1] as num),
-                                        row[2] == null
-                                            ? ''
-                                            : money(row[2] as num),
-                                      ),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OverviewCard extends StatefulWidget {
+  const _OverviewCard({
+    required this.block,
+    required this.ready,
+    required this.onOpen,
+    required this.summary,
+    required this.details,
+  });
+  final _OverviewBlock block;
+  final bool ready;
+  final VoidCallback onOpen;
+  final Widget summary;
+  final Widget? details;
+  @override
+  State<_OverviewCard> createState() => _OverviewCardState();
+}
+
+class _OverviewCardState extends State<_OverviewCard> {
+  bool _expanded = true;
+  bool _shown = false;
+  int _epoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _track();
+  }
+
+  @override
+  void didUpdateWidget(covariant _OverviewCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.ready != oldWidget.ready) _track();
+  }
+
+  void _track() {
+    if (!widget.ready) {
+      _shown = false;
+      _epoch++;
+      return;
+    }
+    if (_shown) return;
+    final epoch = ++_epoch;
+    Future<void>.delayed(Duration.zero, () {
+      if (!mounted || epoch != _epoch) return;
+      setState(() => _shown = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final block = widget.block;
+    return Material(
+      key: ValueKey('overview-card-${block.kind.name}'),
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE5EAED)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  key: ValueKey('overview-toggle-${block.kind.name}'),
+                  tooltip: _expanded ? 'Thu gọn' : 'Mở rộng',
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: widget.onOpen,
+                    child: Text(
+                      block.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF176455),
                       ),
                     ),
                   ),
                 ),
+                const Text(
+                  'Chi tiết',
+                  style: TextStyle(color: Color(0xFF65736B)),
+                ),
+                IconButton(
+                  tooltip: 'Mở báo cáo',
+                  onPressed: widget.onOpen,
+                  icon: const Icon(Icons.chevron_right, size: 20),
+                ),
+              ],
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: 12),
+              if (!_shown)
+                const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else ...[
+                widget.summary,
+                if (widget.details != null) ...[
+                  Divider(
+                    key: ValueKey('overview-divider-${block.kind.name}'),
+                    height: 24,
+                    color: const Color(0xFFE5EAED),
+                  ),
+                  widget.details!,
+                ],
+              ],
             ],
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 }

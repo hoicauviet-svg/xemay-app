@@ -449,46 +449,35 @@ class _ProductTabState extends State<ProductTab>
     ],
   );
 
-  DataCell _cartCell(Map<String, dynamic> row, bool vehicle) => DataCell(
-    onTap: () {},
-    IconButtonTheme(
-      data: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          minimumSize: const Size.square(32),
-          fixedSize: const Size.square(32),
-          padding: EdgeInsets.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
+  DataCell _cartCell(Map<String, dynamic> row, bool vehicle) {
+    final inStock = row['SoLuongTon'] is num && row['SoLuongTon'] > 0;
+    return DataCell(
+      onTap: () {},
+      IconButton(
+        tooltip: 'Thêm vào đơn bán hàng',
+        iconSize: 18,
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+        icon: const Icon(Icons.add_shopping_cart),
+        onPressed: inStock
+            ? () {
+                final added = CartController.shared.add(row, vehicle: vehicle);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      added
+                          ? 'Đã thêm vào đơn bán hàng'
+                          : 'Sản phẩm đã có trong đơn hoặc đã đủ số lượng tồn',
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            : null,
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Thêm vào đơn bán hàng',
-            icon: const Icon(Icons.add_shopping_cart),
-            onPressed: row['SoLuongTon'] is num && row['SoLuongTon'] > 0
-                ? () {
-                    final added = CartController.shared.add(
-                      row,
-                      vehicle: vehicle,
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          added
-                              ? 'Đã thêm vào đơn bán hàng'
-                              : 'Sản phẩm đã có trong đơn hoặc đã đủ số lượng tồn',
-                        ),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  }
-                : null,
-          ),
-        ],
-      ),
-    ),
-  );
+    );
+  }
   String _value(dynamic value) =>
       value == null || value.toString().trim().isEmpty ? '—' : value.toString();
 }

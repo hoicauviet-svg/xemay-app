@@ -200,7 +200,8 @@ def validators():
             'ChiPhi':{'bsonType':'array','items':{'bsonType':'object','required':['Ngay','SoTien','GhiChu'],'properties':{
                 'Ngay':{'bsonType':'date'},'SoTien':{'bsonType':['int','long'],'minimum':0},'GhiChu':{'bsonType':'string'}}}},
             'TongChiPhi':{'bsonType':['int','long'],'minimum':0}}}},
-        {'$expr':{'$eq':['$TongChiPhi',{'$sum':'$ChiPhi.SoTien'}]}}
+        {'$expr':{'$eq':['$TongChiPhi',{'$sum':{'$map':{'input':{'$ifNull':['$ChiPhi',[]]},\
+            'as':'cost','in':{'$cond':[{'$eq':['$$cost.DaXoa',True]},0,'$$cost.SoTien']}}}}]}}
     ]}]}
     for name in ['Xe','SanPham','ChiTietNhapHang']:
         result[name]={'$and':[result[name],cost]} if name in result else cost

@@ -160,6 +160,23 @@ class SalesController extends ChangeNotifier {
     return discountError ?? paidError ?? dueDateError ?? interestDateError;
   }
 
+  /// The order that will be stored, ready to print after a successful save.
+  SalesInvoiceData printableInvoice() {
+    final vehicles = <int, Map<String, dynamic>>{};
+    for (final item in cart.items) {
+      if (item.vehicle && item.product['IdXe'] is int) {
+        vehicles[item.product['IdXe'] as int] = Map<String, dynamic>.from(
+          item.product,
+        );
+      }
+    }
+    return SalesInvoiceData(
+      draft: _pendingDraft ?? snapshot(),
+      customer: customer ?? {'TenKhachHang': customerQuery.trim()},
+      vehicles: vehicles,
+    );
+  }
+
   /// A permissive print snapshot, separate from checkout validation.
   SalesInvoiceData previewInvoice() {
     final missingPrices = <int>{};

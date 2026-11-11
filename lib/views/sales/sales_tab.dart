@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../controllers/cart_controller.dart';
 import '../../controllers/sales_controller.dart';
+import '../../models/printing/sales_invoice_data.dart';
 import '../../core/formatters/inventory_formatters.dart';
 import 'sales_order_preview_popup.dart';
 import '../widgets/form_section.dart';
@@ -100,12 +101,26 @@ class _SalesTabState extends State<SalesTab> {
   Future<void> _save() async {
     if (!sale.awaitingConfirmation && !_form.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
-    final result = await sale.save();
-    if (result != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã lưu đơn hàng #${result.invoiceId}')),
-      );
+    SalesInvoiceData? printable;
+    if (sale.validationError == null || sale.awaitingConfirmation) {
+      try {
+        printable = sale.printableInvoice();
+      } catch (_) {
+        printable = null;
+      }
     }
+    final result = await sale.save();
+    if (result == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Đã lưu đơn hàng #${result.invoiceId}')),
+    );
+    if (printable == null) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          SalesOrderPreviewPopup(data: printable!.asSaved(result.invoiceId)),
+    );
   }
 
   void _preview() {
