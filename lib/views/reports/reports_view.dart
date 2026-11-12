@@ -41,7 +41,7 @@ class _ReportsViewState extends State<ReportsView>
   late final ReportsController _controller;
   late final TabController _tabs;
   bool _exporting = false;
-  String _quickRange = 'month';
+  String _quickRange = 'today';
   ReportKind _pawnMode = ReportKind.pawnDebt;
   ReportKind _debtMode = ReportKind.debts;
   CustomerDebtTiming? _customerDebtTiming;
@@ -300,7 +300,7 @@ class _ReportsViewState extends State<ReportsView>
                     onSelectionChanged: (value) => setState(() {
                       if (tab == ReportKind.pawn) {
                         _pawnMode = value.single;
-                      } else                       if (tab == ReportKind.debts) {
+                      } else if (tab == ReportKind.debts) {
                         _debtMode = value.single;
                         if (_debtMode != ReportKind.customerDebt) {
                           _customerDebtTiming = null;
@@ -547,9 +547,7 @@ class _ReportsViewState extends State<ReportsView>
     final section = _controller.section(kind);
     if (section == null) return const SizedBox.shrink();
     final rows = section.rows;
-    final timing = kind == ReportKind.customerDebt
-        ? _customerDebtTiming
-        : null;
+    final timing = kind == ReportKind.customerDebt ? _customerDebtTiming : null;
     final listed = timing == null
         ? rows
         : [
@@ -632,9 +630,12 @@ class _ReportsViewState extends State<ReportsView>
           ],
           if (kind == ReportKind.cash) ...[
             CashCharts(
-              rows: _controller.data?.sections[ReportKind.cash]?.rows ?? const [],
-              income: _controller.data?.sections[ReportKind.cash]?.totals['Thu'],
-              expense: _controller.data?.sections[ReportKind.cash]?.totals['Chi'],
+              rows:
+                  _controller.data?.sections[ReportKind.cash]?.rows ?? const [],
+              income:
+                  _controller.data?.sections[ReportKind.cash]?.totals['Thu'],
+              expense:
+                  _controller.data?.sections[ReportKind.cash]?.totals['Chi'],
             ),
             const SizedBox(height: 12),
           ],
@@ -934,9 +935,7 @@ class _ReportsViewState extends State<ReportsView>
   }
 
   String _emptyMessage(ReportKind kind) {
-    final timing = kind == ReportKind.customerDebt
-        ? _customerDebtTiming
-        : null;
+    final timing = kind == ReportKind.customerDebt ? _customerDebtTiming : null;
     return switch (timing) {
       CustomerDebtTiming.within => 'Chưa có khoản trong hạn.',
       CustomerDebtTiming.overdue => 'Chưa có khoản quá hạn.',

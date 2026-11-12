@@ -82,6 +82,8 @@ class MongoReportsRepository implements ReportsRepository {
         'TongTienHang',
         'GiamGia',
         'TongThanhToan',
+        'SoTienDaTra',
+        'SoTienKhachDua',
         'TrangThaiLuu',
       ]),
       _read('ChiTietHoaDonBan', [
@@ -146,6 +148,8 @@ class MongoReportsRepository implements ReportsRepository {
       _read('VayVon', [
         'IdVayVon',
         'DoiTac',
+        'NgayVay',
+        'SoTienVay',
         'TongConNo',
         'NgayHen',
         'ThanhToanDangLuu',
@@ -165,7 +169,7 @@ class MongoReportsRepository implements ReportsRepository {
         'IdCamDo',
         'NgayTra',
         'TienGoc',
-        'LaiThu',
+        'SoTienLai',
       ]),
       _read('ThuChiKhac', [
         'ThuChiId',

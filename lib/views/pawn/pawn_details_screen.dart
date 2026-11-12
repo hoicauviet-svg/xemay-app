@@ -341,8 +341,10 @@ class _PawnDetailsScreenState extends State<PawnDetailsScreen>
                     DataCell(Text('#${p['IdTraNoCamDo']}')),
                     DataCell(Text(_date(p['NgayTra']))),
                     DataCell(Text(_money(p['TienGoc']))),
-                    DataCell(Text(_money(p['SoTienLai']))),
+                    // Legacy pawn payment rows store these two amounts in the
+                    // opposite fields from the labels used in the history view.
                     DataCell(Text(_money(p['LaiThu']))),
+                    DataCell(Text(_money(p['SoTienLai']))),
                     DataCell(
                       RecordActions(
                         repository: widget.repository.maintenance,

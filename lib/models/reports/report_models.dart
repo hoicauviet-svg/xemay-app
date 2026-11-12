@@ -98,11 +98,24 @@ class ReportsData {
     this.receiptsByGroup = const {},
     this.customerAging = const ReportDebtAging(),
     this.pawnAging = const ReportDebtAging(),
+    this.cashflow = const ReportCashflow(),
   });
   final Map<ReportKind, ReportSection> sections;
   final DateTime loadedAt;
   final Map<ReportProductGroup, ReportSection> salesByGroup, receiptsByGroup;
   final ReportDebtAging customerAging, pawnAging;
+  final ReportCashflow cashflow;
+}
+
+class ReportCashflow {
+  const ReportCashflow({this.income = const {}, this.expense = const {}});
+  final Map<String, num?> income, expense;
+  num? get totalIncome => _sumValues(income.values);
+  num? get totalExpense => _sumValues(expense.values);
+  num? get balance {
+    final income = totalIncome, expense = totalExpense;
+    return income == null || expense == null ? null : income - expense;
+  }
 }
 
 /// An unknown component keeps the total unknown instead of treating it as zero.
@@ -971,10 +984,10 @@ class ReportCalculator {
         row['IdCamDo'],
         customers['${contract?['IdKhachHang']}']?['TenKhachHang'],
         row['TienGoc'],
-        row['LaiThu'],
+        row['SoTienLai'],
       ]);
       collectedPrincipal.add(row['TienGoc']);
-      collectedInterest.add(row['LaiThu']);
+      collectedInterest.add(row['SoTienLai']);
     }
     final debtById = {for (final d in table('SoNo')) d['IdSoNo']: d};
     final batchesById = {
@@ -1382,6 +1395,7 @@ class ReportCalculator {
       receiptsByGroup: receiptsByGroup,
       customerAging: customerAging,
       pawnAging: pawnAging,
+      cashflow: _cashflow(range, source),
     );
     final pending = source.values
         .expand((rows) => rows)
@@ -1424,6 +1438,90 @@ class ReportCalculator {
       },
       customerAging: customerAging,
       pawnAging: pawnAging,
+      cashflow: complete.cashflow,
     );
+  }
+
+  static ReportCashflow _cashflow(
+    ReportRange range,
+    Map<String, List<Map<String, dynamic>>> source,
+  ) {
+    List<Map<String, dynamic>> table(String name) => source[name] ?? [];
+    List<Map<String, dynamic>> inPeriod(String name, String dateKey) =>
+        table(name).where((row) => range.contains(row[dateKey])).toList();
+    num? sum(Iterable<dynamic> values) => _sumValues(values);
+
+    final income = <String, num?>{
+      'Bán hàng': sum(
+        inPeriod(
+          'HoaDonBan',
+          'NgayMua',
+        ).map((row) => row['SoTienDaTra'] ?? row['SoTienKhachDua'] ?? 0),
+      ),
+      'Cầm đồ - gốc': sum(
+        inPeriod('TraNoCamDo', 'NgayTra').map((row) => row['TienGoc']),
+      ),
+      'Cầm đồ - lãi': sum(
+        inPeriod('TraNoCamDo', 'NgayTra').map((row) => row['SoTienLai']),
+      ),
+      'Thu nợ - gốc': sum([
+        ...inPeriod('TraNo', 'NgayTra').map((row) => row['SotienTra']),
+        ...inPeriod('TraNoCu', 'NgayTra').map((row) => row['SoTienTra']),
+      ]),
+      'Thu nợ - lãi': sum([
+        ...inPeriod('TraNo', 'NgayTra').map((row) => row['LaiThu']),
+        ...inPeriod('TraNoCu', 'NgayTra').map((row) => row['LaiThu']),
+      ]),
+      'Thu khác': sum(
+        inPeriod('ThuChiKhac', 'NgayThang')
+            .where(
+              (row) =>
+                  row['ThuChi'] == true &&
+                  row['IdDanhMuc'] != 'customer-interest',
+            )
+            .map((row) => row['SoTien']),
+      ),
+      'Vay vốn': sum(
+        inPeriod('VayVon', 'NgayVay').map((row) => row['SoTienVay']),
+      ),
+    };
+
+    final batchById = {
+      for (final row in table('NhapHang')) row['IdNhapHang']: row,
+    };
+    final purchaseSums = {
+      'Nhập xe mới': _Sum(),
+      'Nhập xe cũ': _Sum(),
+      'Nhập phụ tùng': _Sum(),
+      'Nhập dịch vụ': _Sum(),
+      'Nhập khác': _Sum(),
+    };
+    for (final payment in inPeriod('TraNoNhapHang', 'NgayTra')) {
+      final batch = batchById[payment['IdNhapHang']];
+      final category = switch (batch?['LoaiSanPham']) {
+        'xe_moi' => 'Nhập xe mới',
+        'xe_cu' => 'Nhập xe cũ',
+        'phu_tung' => 'Nhập phụ tùng',
+        'dich_vu' => 'Nhập dịch vụ',
+        _ => 'Nhập khác',
+      };
+      purchaseSums[category]!.add(payment['SoTienTra']);
+    }
+    final fundingPayments = inPeriod('TraNoVayVon', 'NgayTra');
+    final expense = <String, num?>{
+      for (final entry in purchaseSums.entries) entry.key: entry.value.total,
+      'Cầm đồ': sum(
+        inPeriod('CamDo', 'NgayVay').map((row) => row['SoTienVay']),
+      ),
+      'Chi khác': sum(
+        inPeriod(
+          'ThuChiKhac',
+          'NgayThang',
+        ).where((row) => row['ThuChi'] == false).map((row) => row['SoTien']),
+      ),
+      'Trả lãi vay vốn': sum(fundingPayments.map((row) => row['SoTienTraLai'])),
+      'Trả gốc vay vốn': sum(fundingPayments.map((row) => row['SoTienTraGoc'])),
+    };
+    return ReportCashflow(income: income, expense: expense);
   }
 }

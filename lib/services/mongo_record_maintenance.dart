@@ -67,7 +67,7 @@ class MongoRecordMaintenance implements RecordMaintenance {
       'TraNoCamDo',
       'IdCamDo',
       'TienGoc',
-      'LaiThu',
+      'SoTienLai',
       '',
     ),
     RecordKind.funding: (
@@ -142,7 +142,10 @@ class MongoRecordMaintenance implements RecordMaintenance {
     return value;
   }
 
-  bool _costSchemaStep(Map<String, dynamic> step, Map<String, dynamic> fields) =>
+  bool _costSchemaStep(
+    Map<String, dynamic> step,
+    Map<String, dynamic> fields,
+  ) =>
       costCollections.contains(step['Collection']) &&
       (fields.containsKey('ChiPhi') || fields.containsKey('TongChiPhi'));
 
@@ -1481,7 +1484,8 @@ class MongoRecordMaintenance implements RecordMaintenance {
       s.$5,
       if (s.$6.isNotEmpty) s.$6,
       'GhiChu',
-      if (kind == RecordKind.order || kind == RecordKind.pawn) 'SoTienLai',
+      if (kind == RecordKind.order) 'SoTienLai',
+      if (kind == RecordKind.pawn) 'LaiThu',
       if (kind == RecordKind.openingDebt) 'TienLai',
       if (kind == RecordKind.order) 'NgayHenSauTra',
       if (kind == RecordKind.pawn) 'NgayHen',
@@ -1505,7 +1509,8 @@ class MongoRecordMaintenance implements RecordMaintenance {
       for (final key in [
         s.$5,
         if (s.$6.isNotEmpty) s.$6,
-        if (kind == RecordKind.order || kind == RecordKind.pawn) 'SoTienLai',
+        if (kind == RecordKind.order) 'SoTienLai',
+        if (kind == RecordKind.pawn) 'LaiThu',
         if (kind == RecordKind.openingDebt) 'TienLai',
       ]) {
         number(edited[key] ?? 0);

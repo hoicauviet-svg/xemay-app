@@ -105,7 +105,7 @@ class PawnDetails {
     if (loan is! DateTime) return null;
     var start = _day(loan);
     for (final payment in payments) {
-      final collected = payment['LaiThu'], date = payment['NgayTra'];
+      final collected = payment['SoTienLai'], date = payment['NgayTra'];
       if (collected is num && collected.isFinite && collected > 0) {
         if (date is! DateTime) return null;
         final paidDay = _day(date);
@@ -225,8 +225,10 @@ class PawnPaymentDraft {
     'IdCamDo': pawnId,
     'NgayTra': DateTime.utc(date.year, date.month, date.day),
     'TienGoc': principal.toDouble(),
-    'SoTienLai': interest.toDouble(),
-    'LaiThu': collectedInterest.toDouble(),
+    // TraNoCamDo's legacy field names are inverted: SoTienLai is the
+    // amount actually collected, while LaiThu stores the calculated interest.
+    'SoTienLai': collectedInterest.toDouble(),
+    'LaiThu': interest.toDouble(),
     if (appointmentDate case final next?)
       'NgayHen': DateTime.utc(next.year, next.month, next.day),
   };

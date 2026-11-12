@@ -100,8 +100,11 @@ class _RecordEditorState extends State<RecordEditor> {
     RecordKind.openingDebt => 'SoTienTra',
     _ => throw StateError('Không có phiếu trả nợ cho loại này'),
   };
-  String get interest =>
-      widget.kind == RecordKind.funding ? 'SoTienTraLai' : 'LaiThu';
+  String get interest => switch (widget.kind) {
+    RecordKind.funding => 'SoTienTraLai',
+    RecordKind.pawn => 'SoTienLai',
+    _ => 'LaiThu',
+  };
   @override
   void initState() {
     super.initState();
@@ -417,6 +420,8 @@ class _RecordEditorState extends State<RecordEditor> {
                                   input(
                                     widget.kind == RecordKind.openingDebt
                                         ? 'TienLai'
+                                        : widget.kind == RecordKind.pawn
+                                        ? 'LaiThu'
                                         : 'SoTienLai',
                                     'Tiền lãi ghi nhận',
                                     numeric: true,
@@ -424,6 +429,8 @@ class _RecordEditorState extends State<RecordEditor> {
                                         _payment?[widget.kind ==
                                                 RecordKind.openingDebt
                                             ? 'TienLai'
+                                            : widget.kind == RecordKind.pawn
+                                            ? 'LaiThu'
                                             : 'SoTienLai'] ??
                                         0,
                                   ),

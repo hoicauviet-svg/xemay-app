@@ -6,7 +6,7 @@ import '../models/repositories/reports_repository.dart';
 class ReportsController extends ChangeNotifier {
   ReportsController(this.repository, {DateTime? now}) {
     final date = now ?? DateTime.now();
-    range = ReportRange(from: DateTime(date.year, date.month), to: date);
+    range = ReportRange(from: date, to: date);
   }
   final ReportsRepository repository;
   late ReportRange range;
