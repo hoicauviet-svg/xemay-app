@@ -4,8 +4,10 @@ import 'customer_debt_chart.dart';
 import 'sales_charts.dart';
 import 'stock_chart.dart';
 import 'cash_category_report_view.dart';
+import '../printing/document_preview_screen.dart';
 import '../../models/dashboard/dashboard_module.dart';
 import '../../services/report_excel_service.dart';
+import '../../services/report_overview_pdf.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -464,7 +466,33 @@ class _ReportsViewState extends State<ReportsView>
       ],
     );
     if (kind == ReportKind.overview) {
-      return Align(alignment: Alignment.centerLeft, child: controls);
+      return Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          controls,
+          if (_controller.data != null) ...[
+            OutlinedButton.icon(
+              onPressed: _controller.loading || _exporting
+                  ? null
+                  : () => _export(
+                      ReportKind.overview,
+                      _overviewExportSection(_controller.data!),
+                    ),
+              icon: const Icon(Icons.table_view_outlined),
+              label: const Text('Xuất Excel'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _controller.loading || _exporting
+                  ? null
+                  : _printOverview,
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('In báo cáo tổng'),
+            ),
+          ],
+        ],
+      );
     }
     if (_sectionReport(kind)) return controls;
     return LayoutBuilder(
@@ -560,9 +588,9 @@ class _ReportsViewState extends State<ReportsView>
             columns: section.columns,
             rows: listed,
             totals: {
-              'Tổng thanh toán': _moneyColumn(listed, 5),
-              'Đã thu': _moneyColumn(listed, 6),
-              'Còn nợ': _moneyColumn(listed, 7),
+              'Tổng thanh toán': _moneyColumn(listed, 6),
+              'Đã thu': _moneyColumn(listed, 7),
+              'Còn nợ': _moneyColumn(listed, 8),
             },
             notes: section.notes,
           );
@@ -808,6 +836,15 @@ class _ReportsViewState extends State<ReportsView>
       ];
     }
     if (kind == ReportKind.customerDebt || kind == ReportKind.supplierDebt) {
+      if (kind == ReportKind.customerDebt) {
+        return [
+          _ReportGroup('Đơn bán', 180, [0, 1]),
+          _ReportGroup('Khách hàng', 350, [2, 3, 4]),
+          _ReportGroup('Sản phẩm', 220, [5]),
+          _ReportGroup('Thanh toán', 260, [6, 7, 8]),
+          _ReportGroup('Ngày hẹn / Quá hạn', 210, [9, 10]),
+        ];
+      }
       return [
         _ReportGroup(
           kind == ReportKind.customerDebt ? 'Đơn bán' : 'Lô nhập',
@@ -815,7 +852,7 @@ class _ReportsViewState extends State<ReportsView>
           [0, 1],
         ),
         _ReportGroup(
-          kind == ReportKind.customerDebt ? 'Khách hàng' : 'Nhà cung cấp',
+          'Nhà cung cấp',
           350,
           [2, 3, 4],
         ),
@@ -990,6 +1027,142 @@ class _ReportsViewState extends State<ReportsView>
           const SnackBar(
             content: Text('Chưa xuất được Excel. Vui lòng thử lại.'),
           ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  ReportSection _overviewExportSection(ReportsData data) {
+    const groups = [
+      ReportProductGroup.newVehicles,
+      ReportProductGroup.usedVehicles,
+      ReportProductGroup.parts,
+      ReportProductGroup.services,
+    ];
+    final sales = data.sections[ReportKind.sales];
+    final cash = data.cashflow;
+    final salesProfit =
+        sales?.totals['Lợi nhuận'] ?? sales?.totals['Lợi nhuận đã xác định'];
+    final netProfit = salesProfit == null ||
+            cash.income['Cầm đồ - lãi'] == null ||
+            cash.income['Thu khác'] == null ||
+            cash.expense['Chi khác'] == null ||
+            cash.expense['Trả lãi vay vốn'] == null
+        ? null
+        : salesProfit +
+              cash.income['Cầm đồ - lãi']! +
+              cash.income['Thu khác']! -
+              cash.expense['Chi khác']! -
+              cash.expense['Trả lãi vay vốn']!;
+    List<dynamic> block(String title) => [
+      '@@$title',
+      null,
+      null,
+      null,
+      null,
+      null,
+    ];
+    num? groupValue(ReportProductGroup group, String key) {
+      final totals = data.salesByGroup[group]?.totals;
+      return key == 'Lợi nhuận'
+          ? (totals?['Lợi nhuận'] ?? totals?['Lợi nhuận đã xác định'])
+          : totals?[key];
+    }
+
+    List<dynamic> salesRow(String label, String key) {
+      final values = [for (final group in groups) groupValue(group, key)];
+      if (key == 'Số lượng') {
+        return [
+          label,
+          for (final value in values)
+            value == null ? null : NumberFormat.decimalPattern('vi').format(value),
+          sales?.totals[key] == null
+              ? null
+              : NumberFormat.decimalPattern('vi').format(sales!.totals[key]!),
+        ];
+      }
+      final all = key == 'Lợi nhuận'
+          ? (sales?.totals['Lợi nhuận'] ??
+                sales?.totals['Lợi nhuận đã xác định'])
+          : sales?.totals[key];
+      return [label, ...values, all];
+    }
+
+    List<dynamic> amountRow(String label, num? amount) => [
+      label,
+      null,
+      null,
+      null,
+      null,
+      amount,
+    ];
+    final rows = <List<dynamic>>[
+      block('BÁN HÀNG'),
+      salesRow('Số lượng', 'Số lượng'),
+      salesRow('Giá bán', 'Tiền hàng'),
+      salesRow('Giá vốn', 'Giá nhập'),
+      salesRow('Chi phí', 'Chi phí'),
+      salesRow('Giảm giá', 'Giảm giá'),
+      salesRow('Lợi nhuận bán hàng', 'Lợi nhuận'),
+      block('THU CHI KHÁC'),
+      amountRow('Lãi cầm đồ', cash.income['Cầm đồ - lãi']),
+      amountRow(
+        'Thu nợ - gốc',
+        cash.income['Thu nợ - gốc'],
+      ),
+      amountRow(
+        'Thu nợ - lãi',
+        cash.income['Thu nợ - lãi'],
+      ),
+      amountRow('Thu khác', cash.income['Thu khác']),
+      amountRow('Chi khác', cash.expense['Chi khác']),
+      amountRow('Trả lãi vay vốn', cash.expense['Trả lãi vay vốn']),
+      block('KẾT QUẢ'),
+      amountRow('Lãi', netProfit),
+    ];
+    return ReportSection(
+      columns: const [
+        ReportColumn('', width: 190),
+        ReportColumn('Xe mới', money: true, width: 125),
+        ReportColumn('Xe cũ', money: true, width: 125),
+        ReportColumn('Phụ tùng', money: true, width: 125),
+        ReportColumn('Dịch vụ', money: true, width: 125),
+        ReportColumn('Tổng', money: true, width: 135),
+      ],
+      rows: rows,
+      totals: {'Lãi tổng': netProfit},
+      notes: const [
+        'Phí đăng ký xe mới đã được tính trong chi phí xe mới và lợi nhuận; không trừ thêm lần nữa.',
+      ],
+    );
+  }
+
+  Future<void> _printOverview() async {
+    final data = _controller.data;
+    if (data == null) return;
+    setState(() => _exporting = true);
+    try {
+      final bytes = await ReportOverviewPdf.build(
+        _overviewExportSection(data),
+        _controller.range,
+        data.loadedAt,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => DocumentPreviewScreen(
+            bytes: bytes,
+            title: 'Báo cáo tổng',
+            fileName: 'bao-cao-tong-${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chưa tạo được bản PDF. Vui lòng thử lại.')),
         );
       }
     } finally {

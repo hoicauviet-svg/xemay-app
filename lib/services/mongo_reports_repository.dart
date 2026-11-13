@@ -206,6 +206,7 @@ class MongoReportsRepository implements ReportsRepository {
         'LaiThu',
         'SoCoNo',
         'GhiChu',
+        'LoaiThu',
       ], filter: range.filter('NgayTra')),
       _read('TraNoNhapHang', [
         'IdTraNoNhapHang',

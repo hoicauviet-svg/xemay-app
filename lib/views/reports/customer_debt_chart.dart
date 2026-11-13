@@ -7,8 +7,9 @@ import '../../core/formatters/inventory_formatters.dart';
 enum CustomerDebtTiming { within, overdue, undated }
 
 CustomerDebtTiming customerDebtTiming(List<dynamic> row) {
-  if (row.length < 9 || row[8] is! DateTime) return CustomerDebtTiming.undated;
-  final days = row.length > 9 ? row[9] : null;
+  // Customer debt rows include a product column before the payment columns.
+  if (row.length < 10 || row[9] is! DateTime) return CustomerDebtTiming.undated;
+  final days = row.length > 10 ? row[10] : null;
   return days is num && days > 0
       ? CustomerDebtTiming.overdue
       : CustomerDebtTiming.within;

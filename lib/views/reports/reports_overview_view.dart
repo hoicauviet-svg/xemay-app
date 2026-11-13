@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/formatters/inventory_formatters.dart';
 import '../../models/reports/report_models.dart';
 
@@ -29,6 +30,7 @@ class ReportsOverviewView extends StatelessWidget {
     ReportCashflow cashflow,
   ) {
     const rows = [
+      ('Số lượng', 'Số lượng', null),
       ('Giá bán', 'Tiền hàng', null),
       ('Giá vốn', 'Giá nhập', null),
       ('Chi phí', 'Chi phí', null),
@@ -391,7 +393,11 @@ class ReportsOverviewView extends StatelessWidget {
     final value = key == 'Lợi nhuận'
         ? (totals?['Lợi nhuận'] ?? totals?['Lợi nhuận đã xác định'])
         : totals?[key];
-    return value == null ? 'Chưa đủ dữ liệu' : money(value);
+    return value == null
+        ? 'Chưa đủ dữ liệu'
+        : key == 'Số lượng'
+        ? NumberFormat.decimalPattern('vi').format(value)
+        : money(value);
   }
 
   String _salesTotalValue(ReportSection? section, String key) {
@@ -399,7 +405,9 @@ class ReportsOverviewView extends StatelessWidget {
     final value = key == 'Lợi nhuận'
         ? (totals?['Lợi nhuận'] ?? totals?['Lợi nhuận đã xác định'])
         : totals?[key];
-    return _cashValue(value);
+    return key == 'Số lượng' && value != null
+        ? NumberFormat.decimalPattern('vi').format(value)
+        : _cashValue(value);
   }
 
   String _cashValue(num? value) =>

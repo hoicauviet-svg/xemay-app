@@ -361,6 +361,8 @@ class ReportCalculator {
     }
 
     final groupedSales = <ReportProductGroup, List<List<dynamic>>>{};
+    final salesQuantity = _Sum();
+    final salesQuantityByGroup = <ReportProductGroup, _Sum>{};
     final groupedReceipts = <ReportProductGroup, List<List<dynamic>>>{};
     num? recordedCosts(Map<String, dynamic> record) {
       final entries = record['ChiPhi'];
@@ -615,6 +617,9 @@ class ReportCalculator {
       final groups = <ReportProductGroup, List<Map<String, dynamic>>>{};
       for (final line in detailLines) {
         groups.putIfAbsent(classify(line), () => []).add(line);
+        final quantity = _number(line['SoLuong']);
+        salesQuantity.add(quantity);
+        salesQuantityByGroup.putIfAbsent(classify(line), _Sum.new).add(quantity);
       }
       final weights = {
         for (final entry in groups.entries)
@@ -875,6 +880,11 @@ class ReportCalculator {
         customer?['TenKhachHang'],
         customer?['SoDienThoai'],
         address(customer),
+        (lines[header['IdHoaDon']] ?? <Map<String, dynamic>>[])
+            .map(lineName)
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .join(', '),
         detailsFor(header).total,
         debt['SoTienDaTra'],
         due,
@@ -1000,7 +1010,9 @@ class ReportCalculator {
         supplierPaymentRows = <List<dynamic>>[],
         oldPaymentRows = <List<dynamic>>[],
         fundingPaymentRows = <List<dynamic>>[];
-    for (final p in table('TraNo').where((r) => range.contains(r['NgayTra']))) {
+    for (final p in table('TraNo').where(
+      (r) => range.contains(r['NgayTra']) && !_isSaleCreationPayment(r),
+    )) {
       final debt = debtById[p['IdSoNo']], header = orderById[debt?['IdHoaDon']];
       if (header == null) continue;
       customerPaymentRows.add([
@@ -1106,6 +1118,7 @@ class ReportCalculator {
         rows: _sortVouchers(salesRows),
         totals: {
           'Số đơn': salesSums[0].total,
+          'Số lượng': salesQuantity.total,
           'Tiền hàng': salesSums[1].total,
           'Giảm giá': salesSums[2].total,
           'Doanh thu': salesSums[3].total,
@@ -1189,6 +1202,7 @@ class ReportCalculator {
           ReportColumn('Khách hàng', width: 190),
           ReportColumn('Số điện thoại'),
           ReportColumn('Địa chỉ', width: 220),
+          ReportColumn('Sản phẩm', width: 220),
           ReportColumn('Tổng thanh toán', money: true),
           ReportColumn('Đã thu', money: true),
           ReportColumn('Còn nợ', money: true),
@@ -1197,9 +1211,9 @@ class ReportCalculator {
         ],
         rows: _sortVouchers(customerDebtRows),
         totals: {
-          'Tổng thanh toán': _sumValues(customerDebtRows.map((r) => r[5])),
-          'Đã thu': _sumValues(customerDebtRows.map((r) => r[6])),
-          'Còn nợ': _sumValues(customerDebtRows.map((r) => r[7])),
+          'Tổng thanh toán': _sumValues(customerDebtRows.map((r) => r[6])),
+          'Đã thu': _sumValues(customerDebtRows.map((r) => r[7])),
+          'Còn nợ': _sumValues(customerDebtRows.map((r) => r[8])),
         },
         notes: const [
           'Các đơn bán còn nợ tại thời điểm cập nhật, không gồm lãi dự tính.',
@@ -1328,7 +1342,11 @@ class ReportCalculator {
         ],
       ),
     }, timestamp);
-    ReportSection groupSection(ReportKind kind, List<List<dynamic>> rows) {
+    ReportSection groupSection(
+      ReportKind kind,
+      List<List<dynamic>> rows, {
+      num? quantity,
+    }) {
       final template = result.sections[kind]!;
       final isSales = kind == ReportKind.sales;
       return ReportSection(
@@ -1336,6 +1354,7 @@ class ReportCalculator {
         rows: _sortVouchers(rows),
         totals: {
           isSales ? 'Số đơn' : 'Số lô': rows.length,
+          if (isSales) 'Số lượng': quantity,
           if (isSales) ...{
             'Lợi nhuận đã xác định':
                 rows.isNotEmpty && rows.every((r) => r.last == null)
@@ -1358,7 +1377,11 @@ class ReportCalculator {
       for (final group in ReportProductGroup.values.where(
         (g) => g != ReportProductGroup.all,
       ))
-        group: groupSection(ReportKind.sales, groupedSales[group] ?? []),
+        group: groupSection(
+          ReportKind.sales,
+          groupedSales[group] ?? [],
+          quantity: salesQuantityByGroup[group]?.total ?? 0,
+        ),
     };
     final receiptsByGroup = {
       for (final group in ReportProductGroup.values.where(
@@ -1442,6 +1465,13 @@ class ReportCalculator {
     );
   }
 
+  static bool _isSaleCreationPayment(Map<String, dynamic> row) =>
+      row['LoaiThu'] == 'thanh_toan_ban_hang' ||
+      row['GhiChu'] == 'Thanh toán khi lập đơn' ||
+      (row['_id'] is String &&
+          (row['_id'] as String).startsWith('sale:') &&
+          (row['_id'] as String).endsWith(':payment'));
+
   static ReportCashflow _cashflow(
     ReportRange range,
     Map<String, List<Map<String, dynamic>>> source,
@@ -1465,9 +1495,15 @@ class ReportCalculator {
         inPeriod('TraNoCamDo', 'NgayTra').map((row) => row['SoTienLai']),
       ),
       'Thu nợ - gốc': sum([
+        ...inPeriod('TraNo', 'NgayTra')
+            .where((row) => !_isSaleCreationPayment(row))
+            .map((row) => row['SotienTra']),
         ...inPeriod('TraNoCu', 'NgayTra').map((row) => row['SoTienTra']),
       ]),
       'Thu nợ - lãi': sum([
+        ...inPeriod('TraNo', 'NgayTra')
+            .where((row) => !_isSaleCreationPayment(row))
+            .map((row) => row['LaiThu']),
         ...inPeriod('TraNoCu', 'NgayTra').map((row) => row['LaiThu']),
       ]),
       'Thu khác': sum(
