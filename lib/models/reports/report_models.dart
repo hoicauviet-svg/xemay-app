@@ -1465,11 +1465,9 @@ class ReportCalculator {
         inPeriod('TraNoCamDo', 'NgayTra').map((row) => row['SoTienLai']),
       ),
       'Thu nợ - gốc': sum([
-        ...inPeriod('TraNo', 'NgayTra').map((row) => row['SotienTra']),
         ...inPeriod('TraNoCu', 'NgayTra').map((row) => row['SoTienTra']),
       ]),
       'Thu nợ - lãi': sum([
-        ...inPeriod('TraNo', 'NgayTra').map((row) => row['LaiThu']),
         ...inPeriod('TraNoCu', 'NgayTra').map((row) => row['LaiThu']),
       ]),
       'Thu khác': sum(
