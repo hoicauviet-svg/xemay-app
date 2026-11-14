@@ -356,6 +356,7 @@ class _SettingsTabState extends State<SettingsTab> {
       return;
     }
     final preview = _controller.comparison!;
+    final commitMessage = TextEditingController();
     String policy = 'abort';
     final accepted = await showDialog<bool>(
       context: context,
@@ -391,6 +392,16 @@ class _SettingsTabState extends State<SettingsTab> {
                     'Bảng có cấu trúc khác nhau: ${preview.schemaConflicts}',
                   ),
                   const SizedBox(height: 12),
+                  TextField(
+                    key: const ValueKey('settings-sync-commit-message'),
+                    controller: commitMessage,
+                    maxLength: 120,
+                    decoration: const InputDecoration(
+                      labelText: 'Mô tả phiên bản (không bắt buộc)',
+                      hintText: 'Ví dụ: Chốt số liệu cuối tháng',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   const Text(
                     'Cảnh báo: gộp theo khóa bản ghi vào một database mới. Bản ghi chỉ có ở một bên được giữ lại; thao tác xóa không tự truyền sang bên kia. Hãy dừng nhập liệu trên các máy khi thực hiện.',
                   ),
@@ -453,11 +464,56 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
       ),
     );
+    final savedMessage = commitMessage.text.trim();
+    commitMessage.dispose();
     if (accepted != true || !mounted) return;
     await _runCloudWork(
-      () => _controller.syncCloud(upload: upload, conflictPolicy: policy),
+      () => _controller.syncCloud(
+        upload: upload,
+        conflictPolicy: policy,
+        commitMessage: savedMessage,
+      ),
       'Đang gộp dữ liệu',
     );
+  }
+
+  Future<void> _useSyncVersion(SyncHistoryEntry entry) async {
+    final version = entry.version;
+    if (version == null) return;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dùng phiên bản đã lưu?'),
+        content: Text(
+          'Chuyển cả dữ liệu trên máy và cloud về ${version.label}? Các phiên bản mới hơn vẫn được giữ lại trong lịch sử.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Chuyển phiên bản'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true && mounted) {
+      await _runCloudWork(
+        () => _controller.useSyncVersion(entry),
+        'Đang xác nhận phiên bản lưu',
+      );
+    }
+  }
+
+  String? _databaseName(String uri) {
+    try {
+      final path = Uri.parse(uri).pathSegments;
+      return path.isEmpty ? null : path.last;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _runCloudWork(Future<void> Function() work, String title) async {
@@ -485,6 +541,65 @@ class _SettingsTabState extends State<SettingsTab> {
   String _syncTime(DateTime? value) => value == null
       ? 'Chưa đồng bộ'
       : DateFormat('dd/MM/yyyy HH:mm').format(value.toLocal());
+
+  SyncHistoryEntry? _latestSuccessfulSync(List<SyncHistoryEntry> history) {
+    for (final entry in history) {
+      if (entry.success) return entry;
+    }
+    return null;
+  }
+
+  Widget _changesSinceSync(
+    CloudComparison? comparison,
+    bool? upload, {
+    required bool hasSyncBaseline,
+  }) {
+    if (comparison == null || upload == null) {
+      return Text(
+        hasSyncBaseline
+            ? 'Cập nhật đối chiếu để xem dữ liệu phát sinh ở máy và cloud kể từ lần đồng bộ gần nhất.'
+            : 'Cập nhật đối chiếu để xem khác biệt hiện tại giữa dữ liệu trên máy và cloud.',
+        style: TextStyle(fontSize: 12, color: Color(0xFF6E7D83)),
+      );
+    }
+    final localOnly = upload ? comparison.sourceOnly : comparison.targetOnly;
+    final cloudOnly = upload ? comparison.targetOnly : comparison.sourceOnly;
+    final changed = localOnly + cloudOnly + comparison.conflicts;
+    if (changed == 0 && comparison.schemaConflicts == 0) {
+      return const Row(
+        children: [
+          Icon(Icons.check_circle_outline, color: Color(0xFF176455), size: 19),
+          SizedBox(width: 8),
+          Expanded(child: Text('Chưa phát sinh thay đổi kể từ lần đồng bộ.')),
+        ],
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _changeChip('Chỉ có trên máy', localOnly, Icons.computer_outlined),
+        _changeChip('Chỉ có trên cloud', cloudOnly, Icons.cloud_outlined),
+        _changeChip(
+          'Khác nội dung',
+          comparison.conflicts,
+          Icons.compare_arrows,
+        ),
+        if (comparison.schemaConflicts > 0)
+          _changeChip(
+            'Khác cấu trúc',
+            comparison.schemaConflicts,
+            Icons.table_chart_outlined,
+          ),
+      ],
+    );
+  }
+
+  Widget _changeChip(String label, int count, IconData icon) => Chip(
+    avatar: Icon(icon, size: 16),
+    label: Text('$label: $count'),
+    visualDensity: VisualDensity.compact,
+  );
 
   Widget _cloudCard(String title, Widget child) => Container(
     width: double.infinity,
@@ -543,6 +658,11 @@ class _SettingsTabState extends State<SettingsTab> {
 
   Widget _cloudPage() {
     final settings = _controller.settings;
+    final lastSuccessfulSync = _latestSuccessfulSync(settings.syncHistory);
+    final lastSyncAt = lastSuccessfulSync?.at ?? settings.lastSyncAt;
+    final comparison = _controller.comparison;
+    final activeLocalDatabase = _databaseName(settings.mongoUri);
+    final activeCloudDatabase = _databaseName(settings.cloudUri);
     final ready =
         !_controller.busy &&
         settings.cloudUri.isNotEmpty &&
@@ -692,12 +812,41 @@ class _SettingsTabState extends State<SettingsTab> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Đồng bộ thành công gần nhất: ${_syncTime(settings.lastSyncAt)}',
+                      lastSuccessfulSync == null
+                          ? 'Đồng bộ thành công gần nhất: ${_syncTime(lastSyncAt)}'
+                          : 'Đồng bộ gần nhất: ${_syncTime(lastSyncAt)} · ${lastSuccessfulSync.upload ? 'Máy lên cloud' : 'Cloud về máy'}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 4),
                     const Text(
                       'Ứng dụng nhắc khi mở nếu đã 30 ngày chưa đồng bộ. Phiên bản hiển thị là kết quả kiểm tra gần nhất.',
                       style: TextStyle(fontSize: 12, color: Color(0xFF6E7D83)),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F7F6),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            lastSyncAt == null
+                                ? 'Khác biệt dữ liệu hiện tại'
+                                : 'Thay đổi kể từ lần đồng bộ',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          _changesSinceSync(
+                            comparison,
+                            _controller.comparisonUpload,
+                            hasSyncBaseline: lastSyncAt != null,
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Wrap(
@@ -731,7 +880,11 @@ class _SettingsTabState extends State<SettingsTab> {
                                 )
                               : null,
                           icon: const Icon(Icons.compare_arrows, size: 18),
-                          label: const Text('So sánh phiên bản'),
+                          label: Text(
+                            comparison == null
+                                ? 'Cập nhật thay đổi'
+                                : 'Làm mới thay đổi',
+                          ),
                         ),
                       ],
                     ),
@@ -745,7 +898,7 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
               const SizedBox(height: 16),
               _cloudCard(
-                'Lịch sử đồng bộ',
+                'Lịch sử phiên bản',
                 Column(
                   key: const ValueKey('settings-sync-history'),
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -757,7 +910,7 @@ class _SettingsTabState extends State<SettingsTab> {
                       )
                     else ...[
                       const Text(
-                        '50 lần thực hiện gần nhất trên máy này',
+                        'Tối đa 200 mốc đồng bộ gần nhất trên máy này. Có thể chuyển lại bản cũ mà không xóa các bản khác.',
                         style: TextStyle(
                           fontSize: 12,
                           color: Color(0xFF6E7D83),
@@ -790,6 +943,11 @@ class _SettingsTabState extends State<SettingsTab> {
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
+                                    if (entry.message.trim().isNotEmpty)
+                                      Text(
+                                        entry.message,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
                                     Text(
                                       _syncTime(entry.at),
                                       style: const TextStyle(
@@ -802,6 +960,51 @@ class _SettingsTabState extends State<SettingsTab> {
                                         '${entry.version?.label ?? ''} · ${entry.collections} bảng · ${entry.rows} dòng',
                                         style: const TextStyle(fontSize: 12),
                                       ),
+                                    if (entry.commitId != null)
+                                      Text(
+                                        'Commit ${entry.commitId!.substring(0, entry.commitId!.length < 12 ? entry.commitId!.length : 12)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    if (entry.changes.isNotEmpty)
+                                      Text(
+                                        'Chỉ ở nguồn: ${entry.changes['sourceOnly'] ?? 0} · Chỉ ở đích: ${entry.changes['targetOnly'] ?? 0} · Xung đột: ${entry.changes['conflicts'] ?? 0}',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    if (entry.success &&
+                                        entry.localDatabase != null &&
+                                        entry.cloudDatabase != null) ...[
+                                      const SizedBox(height: 6),
+                                      if (activeLocalDatabase ==
+                                              entry.localDatabase &&
+                                          activeCloudDatabase ==
+                                              entry.cloudDatabase)
+                                        const Chip(
+                                          visualDensity: VisualDensity.compact,
+                                          avatar: Icon(Icons.check, size: 16),
+                                          label: Text(
+                                            'Đang dùng phiên bản này',
+                                          ),
+                                        )
+                                      else
+                                        TextButton.icon(
+                                          key: ValueKey(
+                                            'settings-use-version-${entry.version?.revision}-${entry.at.millisecondsSinceEpoch}',
+                                          ),
+                                          onPressed: _controller.busy
+                                              ? null
+                                              : () => _useSyncVersion(entry),
+                                          icon: const Icon(
+                                            Icons.history,
+                                            size: 18,
+                                          ),
+                                          label: const Text(
+                                            'Dùng phiên bản này',
+                                          ),
+                                        ),
+                                    ],
                                   ],
                                 ),
                               ),

@@ -112,8 +112,14 @@ class CloudSyncResult {
     required this.collections,
     this.version,
     this.sourceMongoUri,
+    this.commitId,
+    this.changes = const {},
+    this.incremental = false,
   });
   final String? sourceMongoUri;
+  final String? commitId;
+  final Map<String, dynamic> changes;
+  final bool incremental;
   final DatabaseVersion? version;
   final String mongoUri, database;
   final int rows, collections;
@@ -186,12 +192,21 @@ class SyncHistoryEntry {
     this.rows = 0,
     this.collections = 0,
     this.conflictPolicy = 'abort',
+    this.message = '',
+    this.localDatabase,
+    this.cloudDatabase,
+    this.commitId,
+    this.changes = const {},
   });
   final DateTime at;
   final bool upload, success;
   final DatabaseVersion? version;
   final int rows, collections;
   final String conflictPolicy;
+  final String message;
+  final String? localDatabase, cloudDatabase;
+  final String? commitId;
+  final Map<String, dynamic> changes;
   Map<String, dynamic> toJson() => {
     'at': at.toUtc().toIso8601String(),
     'upload': upload,
@@ -200,6 +215,11 @@ class SyncHistoryEntry {
     'rows': rows,
     'collections': collections,
     'conflictPolicy': conflictPolicy,
+    'message': message,
+    'localDatabase': localDatabase,
+    'cloudDatabase': cloudDatabase,
+    'commitId': commitId,
+    'changes': changes,
   };
   factory SyncHistoryEntry.fromJson(Map<String, dynamic> json) =>
       SyncHistoryEntry(
@@ -214,5 +234,12 @@ class SyncHistoryEntry {
         rows: (json['rows'] as num?)?.toInt() ?? 0,
         collections: (json['collections'] as num?)?.toInt() ?? 0,
         conflictPolicy: json['conflictPolicy'] as String? ?? 'abort',
+        message: json['message'] as String? ?? '',
+        localDatabase: json['localDatabase'] as String?,
+        cloudDatabase: json['cloudDatabase'] as String?,
+        commitId: json['commitId'] as String?,
+        changes: json['changes'] is Map
+            ? Map<String, dynamic>.from(json['changes'] as Map)
+            : const {},
       );
 }

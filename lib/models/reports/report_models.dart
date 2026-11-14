@@ -96,6 +96,11 @@ class ReportsData {
     this.loadedAt, {
     this.salesByGroup = const {},
     this.receiptsByGroup = const {},
+    this.receiptDetails = const ReportSection(
+      columns: [],
+      rows: [],
+      totals: {},
+    ),
     this.customerAging = const ReportDebtAging(),
     this.pawnAging = const ReportDebtAging(),
     this.cashflow = const ReportCashflow(),
@@ -103,13 +108,19 @@ class ReportsData {
   final Map<ReportKind, ReportSection> sections;
   final DateTime loadedAt;
   final Map<ReportProductGroup, ReportSection> salesByGroup, receiptsByGroup;
+  final ReportSection receiptDetails;
   final ReportDebtAging customerAging, pawnAging;
   final ReportCashflow cashflow;
 }
 
 class ReportCashflow {
-  const ReportCashflow({this.income = const {}, this.expense = const {}});
+  const ReportCashflow({
+    this.income = const {},
+    this.expense = const {},
+    this.salesByProductGroup = const {},
+  });
   final Map<String, num?> income, expense;
+  final Map<ReportProductGroup, num?> salesByProductGroup;
   num? get totalIncome => _sumValues(income.values);
   num? get totalExpense => _sumValues(expense.values);
   num? get balance {
@@ -619,7 +630,9 @@ class ReportCalculator {
         groups.putIfAbsent(classify(line), () => []).add(line);
         final quantity = _number(line['SoLuong']);
         salesQuantity.add(quantity);
-        salesQuantityByGroup.putIfAbsent(classify(line), _Sum.new).add(quantity);
+        salesQuantityByGroup
+            .putIfAbsent(classify(line), _Sum.new)
+            .add(quantity);
       }
       final weights = {
         for (final entry in groups.entries)
@@ -688,6 +701,7 @@ class ReportCalculator {
     }
     final receiptRows = <List<dynamic>>[],
         receiptSums = List.generate(5, (_) => _Sum());
+    final receiptDetailRows = <List<dynamic>>[];
     var receiptMismatch = 0;
     final receiptMismatchIds = <dynamic>[];
     for (final row in table('NhapHang').where(
@@ -733,6 +747,107 @@ class ReportCalculator {
           .putIfAbsent(group, () => [])
           .add(List<dynamic>.from(receiptRows.last));
     }
+    final includedReceipts = {
+      for (final row in table('NhapHang'))
+        if (row['TrangThaiLuu'] != 'dang_luu' &&
+            range.contains(row['NgayNhap']))
+          row['IdNhapHang']: row,
+    };
+    final vehicleReceiptHeaders = {
+      for (final row in [...table('XeMoi'), ...table('XeCu')])
+        if (row['IdNhapHang'] != null) row['IdXe']: row,
+    };
+    final detailedVehicleIds = <dynamic>{};
+    for (final line in table('ChiTietNhapHang')) {
+      final header = includedReceipts[line['IdNhapHang']];
+      if (header == null) continue;
+      final vehicleId = line['IdXe'];
+      final productId = line['IdSanPham'];
+      final vehicle = vehicles[vehicleId];
+      final product = products[productId];
+      final quantity = _number(line['SoLuong']);
+      final cost = _number(line['GiaNhap']);
+      if (vehicleId != null) detailedVehicleIds.add(vehicleId);
+      receiptDetailRows.add([
+        header['IdNhapHang'],
+        header['NgayNhap'],
+        vehicleId ?? productId,
+        line['TenSanPham'] ?? vehicle?['TenXe'] ?? product?['TenSanPham'] ?? '',
+        quantity,
+        cost,
+        quantity == null || cost == null ? null : quantity * cost,
+      ]);
+    }
+    // Older vehicle receipts are linked from Xe/XeMoi/XeCu without a
+    // ChiTietNhapHang row. Include those vehicles as one product each.
+    for (final vehicle in table('Xe')) {
+      final vehicleId = vehicle['IdXe'];
+      final extension = vehicleReceiptHeaders[vehicleId];
+      final batchId = vehicle['IdNhapHang'] ?? extension?['IdNhapHang'];
+      final header = includedReceipts[batchId];
+      if (header == null ||
+          vehicleId == null ||
+          detailedVehicleIds.contains(vehicleId) ||
+          vehicle['DangNhapHang'] != null ||
+          !const [
+            'moi',
+            'cu',
+            'chua_xac_dinh',
+          ].contains(vehicle['TinhTrangXe'])) {
+        continue;
+      }
+      final cost = _number(vehicle['GiaNhap']);
+      receiptDetailRows.add([
+        batchId,
+        header['NgayNhap'],
+        vehicleId,
+        vehicle['TenXe'] ?? '',
+        1,
+        cost,
+        cost,
+      ]);
+      detailedVehicleIds.add(vehicleId);
+    }
+    receiptDetailRows.sort((a, b) {
+      final ad = a[1], bd = b[1];
+      if (ad is DateTime && bd is DateTime) {
+        final dateOrder = bd.compareTo(ad);
+        if (dateOrder != 0) return dateOrder;
+      }
+      final batchOrder = (b[0] as num).compareTo(a[0] as num);
+      if (batchOrder != 0) return batchOrder;
+      return '${a[3] ?? ''}'.compareTo('${b[3] ?? ''}');
+    });
+    final declaredReceiptQuantity = _sumValues(
+      includedReceipts.values.map((header) => header['SoLuong']),
+    );
+    final detailedReceiptQuantity = _sumValues(
+      receiptDetailRows.map((row) => row[4]),
+    );
+    final receiptDetails = ReportSection(
+      columns: const [
+        ReportColumn('Mã lô', width: 90),
+        ReportColumn('Ngày nhập', width: 120),
+        ReportColumn('Mã xe / sản phẩm', width: 160),
+        ReportColumn('Tên sản phẩm', width: 240),
+        ReportColumn('Số lượng', width: 100),
+        ReportColumn('Giá nhập', money: true),
+        ReportColumn('Thành tiền', money: true),
+      ],
+      rows: receiptDetailRows,
+      totals: {
+        'Số dòng sản phẩm': receiptDetailRows.length,
+        'Số lượng': _sumValues(receiptDetailRows.map((row) => row[4])),
+        'Thành tiền': _sumValues(receiptDetailRows.map((row) => row[6])),
+      },
+      notes: [
+        'Chi tiết mặt hàng thuộc các lô có ngày nhập trong khoảng thời gian đã chọn.',
+        if (declaredReceiptQuantity is num &&
+            detailedReceiptQuantity is num &&
+            (declaredReceiptQuantity - detailedReceiptQuantity).abs() > 0.01)
+          'Số lượng khai báo trên phiếu là $declaredReceiptQuantity, tổng số lượng trong chi tiết là $detailedReceiptQuantity. Một số mặt hàng lịch sử có thể chưa có dòng chi tiết lưu riêng.',
+      ],
+    );
     final stockRows = <List<dynamic>>[];
     final stockNotes = <String>[];
     for (final condition in ['moi', 'cu']) {
@@ -1416,6 +1531,7 @@ class ReportCalculator {
       timestamp,
       salesByGroup: salesByGroup,
       receiptsByGroup: receiptsByGroup,
+      receiptDetails: receiptDetails,
       customerAging: customerAging,
       pawnAging: pawnAging,
       cashflow: _cashflow(range, source),
@@ -1459,6 +1575,7 @@ class ReportCalculator {
         for (final entry in receiptsByGroup.entries)
           entry.key: pendingSection(entry.value),
       },
+      receiptDetails: pendingSection(receiptDetails),
       customerAging: customerAging,
       pawnAging: pawnAging,
       cashflow: complete.cashflow,
@@ -1467,7 +1584,10 @@ class ReportCalculator {
 
   static bool _isSaleCreationPayment(Map<String, dynamic> row) =>
       row['LoaiThu'] == 'thanh_toan_ban_hang' ||
-      row['GhiChu'] == 'Thanh toán khi lập đơn' ||
+      const {
+        'Thanh toán khi lập đơn',
+        'Trả lúc mua xe',
+      }.contains(row['GhiChu']) ||
       (row['_id'] is String &&
           (row['_id'] as String).startsWith('sale:') &&
           (row['_id'] as String).endsWith(':payment'));
@@ -1481,13 +1601,104 @@ class ReportCalculator {
         table(name).where((row) => range.contains(row[dateKey])).toList();
     num? sum(Iterable<dynamic> values) => _sumValues(values);
 
+    final debtById = {for (final debt in table('SoNo')) debt['IdSoNo']: debt};
+    final saleCreationPaymentsByInvoice = <dynamic, _Sum>{};
+    for (final payment in inPeriod('TraNo', 'NgayTra')) {
+      if (!_isSaleCreationPayment(payment)) continue;
+      final invoiceId = debtById[payment['IdSoNo']]?['IdHoaDon'];
+      if (invoiceId == null) continue;
+      saleCreationPaymentsByInvoice
+          .putIfAbsent(invoiceId, _Sum.new)
+          .add(payment['SotienTra']);
+    }
+    final salesIncome = _Sum();
+    final salesByProductGroup = {
+      for (final group in ReportProductGroup.values)
+        if (group != ReportProductGroup.all) group: _Sum(),
+    };
+    final salesDetailsByInvoice = <dynamic, List<Map<String, dynamic>>>{};
+    for (final line in table('ChiTietHoaDonBan')) {
+      salesDetailsByInvoice.putIfAbsent(line['IdHoaDon'], () => []).add(line);
+    }
+    final vehicleById = {
+      for (final vehicle in table('Xe')) vehicle['IdXe']: vehicle,
+    };
+    ReportProductGroup groupOfSaleLine(Map<String, dynamic> line) {
+      final kind = line['LoaiSanPham'];
+      if (kind == 'dich_vu' || line['IdDichVu'] != null) {
+        return ReportProductGroup.services;
+      }
+      final condition =
+          vehicleById[line['IdXe']]?['TinhTrangXe'] ?? line['TinhTrangXe'];
+      if (condition == 'moi' || kind == 'xe_moi') {
+        return ReportProductGroup.newVehicles;
+      }
+      if (condition == 'cu' || kind == 'xe_cu') {
+        return ReportProductGroup.usedVehicles;
+      }
+      if (line['IdXe'] != null) return ReportProductGroup.newVehicles;
+      if (line['IdSanPham'] != null || kind == 'phu_tung') {
+        return ReportProductGroup.parts;
+      }
+      return ReportProductGroup.unknown;
+    }
+
+    for (final invoice in inPeriod('HoaDonBan', 'NgayMua')) {
+      if (invoice['TrangThaiLuu'] == 'dang_luu') continue;
+      final recordedPaid = _number(invoice['SoTienDaTra']);
+      final initialPayment =
+          saleCreationPaymentsByInvoice[invoice['IdHoaDon']]?.total;
+      final legacyPaid = invoice['PhienBanBanHang'] != 3
+          ? _number(invoice['SoTienKhachDua'])
+          : null;
+      final collected = recordedPaid != null && recordedPaid > 0
+          ? recordedPaid
+          : (initialPayment != null && initialPayment > 0
+                ? initialPayment
+                : (legacyPaid != null && legacyPaid > 0
+                      ? legacyPaid
+                      : recordedPaid ?? 0));
+      salesIncome.add(collected);
+      final lines = salesDetailsByInvoice[invoice['IdHoaDon']] ?? [];
+      final weights = <ReportProductGroup, num?>{};
+      for (final line in lines) {
+        final group = groupOfSaleLine(line);
+        final unitPrice =
+            OrderDetails.unitPrice(line) ??
+            _number(vehicleById[line['IdXe']]?['GiaBan']);
+        final quantity = _number(line['SoLuong']);
+        final weight = unitPrice == null || quantity == null
+            ? null
+            : unitPrice * quantity;
+        weights[group] =
+            weights.containsKey(group) &&
+                weights[group] != null &&
+                weight != null
+            ? weights[group]! + weight
+            : weight;
+      }
+      if (weights.isEmpty && invoice['IdXe'] != null) {
+        final vehicle = vehicleById[invoice['IdXe']];
+        final condition = vehicle?['TinhTrangXe'];
+        final group = condition == 'cu'
+            ? ReportProductGroup.usedVehicles
+            : ReportProductGroup.newVehicles;
+        weights[group] = _number(vehicle?['GiaBan']) ?? 1;
+      }
+      if (weights.isEmpty && invoice['IdSanPham'] != null) {
+        weights[ReportProductGroup.parts] = 1;
+      }
+      if (weights.isEmpty) weights[ReportProductGroup.unknown] = 1;
+      final allocations = weights.length == 1 && weights.values.single == null
+          ? {weights.keys.single: collected}
+          : _allocate(collected, weights);
+      for (final entry in allocations.entries) {
+        salesByProductGroup[entry.key]!.add(entry.value);
+      }
+    }
+
     final income = <String, num?>{
-      'Bán hàng': sum(
-        inPeriod(
-          'HoaDonBan',
-          'NgayMua',
-        ).map((row) => row['SoTienDaTra'] ?? row['SoTienKhachDua'] ?? 0),
-      ),
+      'Bán hàng': salesIncome.total,
       'Cầm đồ - gốc': sum(
         inPeriod('TraNoCamDo', 'NgayTra').map((row) => row['TienGoc']),
       ),
@@ -1523,6 +1734,40 @@ class ReportCalculator {
     final batchById = {
       for (final row in table('NhapHang')) row['IdNhapHang']: row,
     };
+    final detailsByBatch = <dynamic, List<Map<String, dynamic>>>{};
+    for (final detail in table('ChiTietNhapHang')) {
+      detailsByBatch.putIfAbsent(detail['IdNhapHang'], () => []).add(detail);
+    }
+    final allPaymentsByBatch = <dynamic, List<Map<String, dynamic>>>{};
+    for (final payment in table('TraNoNhapHang')) {
+      allPaymentsByBatch
+          .putIfAbsent(payment['IdNhapHang'], () => [])
+          .add(payment);
+    }
+    String purchaseCategory(Map<String, dynamic>? batch) {
+      final type = batch?['LoaiSanPham'];
+      if (type == 'xe_moi' || type == 'moi') return 'Nhập xe mới';
+      if (type == 'xe_cu' || type == 'cu') return 'Nhập xe cũ';
+      if (type == 'phu_tung') return 'Nhập phụ tùng';
+      if (type == 'dich_vu') return 'Nhập dịch vụ';
+      final details = detailsByBatch[batch?['IdNhapHang']] ?? const [];
+      final linkedVehicles = details
+          .map((detail) => vehicleById[detail['IdXe']])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      if (linkedVehicles.any((vehicle) => vehicle['TinhTrangXe'] == 'cu')) {
+        return 'Nhập xe cũ';
+      }
+      if (linkedVehicles.isNotEmpty ||
+          details.any((detail) => detail['IdXe'] != null)) {
+        return 'Nhập xe mới';
+      }
+      if (details.any((detail) => detail['IdSanPham'] != null)) {
+        return 'Nhập phụ tùng';
+      }
+      return 'Nhập xe mới';
+    }
+
     final purchaseSums = {
       'Nhập xe mới': _Sum(),
       'Nhập xe cũ': _Sum(),
@@ -1532,14 +1777,17 @@ class ReportCalculator {
     };
     for (final payment in inPeriod('TraNoNhapHang', 'NgayTra')) {
       final batch = batchById[payment['IdNhapHang']];
-      final category = switch (batch?['LoaiSanPham']) {
-        'xe_moi' => 'Nhập xe mới',
-        'xe_cu' => 'Nhập xe cũ',
-        'phu_tung' => 'Nhập phụ tùng',
-        'dich_vu' => 'Nhập dịch vụ',
-        _ => 'Nhập khác',
-      };
-      purchaseSums[category]!.add(payment['SoTienTra']);
+      purchaseSums[purchaseCategory(batch)]!.add(payment['SoTienTra']);
+    }
+    for (final batch in table('NhapHang')) {
+      final batchId = batch['IdNhapHang'];
+      if (batch['TrangThaiLuu'] == 'dang_luu' ||
+          !range.contains(batch['NgayNhap']) ||
+          (allPaymentsByBatch[batchId]?.isNotEmpty ?? false)) {
+        continue;
+      }
+      // Older receipts stored the paid amount only on the batch header.
+      purchaseSums[purchaseCategory(batch)]!.add(batch['SoTienDaTra']);
     }
     final fundingPayments = inPeriod('TraNoVayVon', 'NgayTra');
     final expense = <String, num?>{
@@ -1556,6 +1804,13 @@ class ReportCalculator {
       'Trả lãi vay vốn': sum(fundingPayments.map((row) => row['SoTienTraLai'])),
       'Trả gốc vay vốn': sum(fundingPayments.map((row) => row['SoTienTraGoc'])),
     };
-    return ReportCashflow(income: income, expense: expense);
+    return ReportCashflow(
+      income: income,
+      expense: expense,
+      salesByProductGroup: {
+        for (final entry in salesByProductGroup.entries)
+          entry.key: entry.value.total,
+      },
+    );
   }
 }

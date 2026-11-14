@@ -16,6 +16,8 @@ import '../../models/batches/batch_models.dart';
 import '../../models/goods_receipt/goods_receipt_models.dart';
 import '../../models/repositories/batch_repository.dart';
 import '../../models/repositories/directory_repository.dart';
+import '../../models/reports/report_models.dart';
+import '../finance/finance_list_widgets.dart';
 import '../widgets/app_top_bar.dart';
 import '../widgets/form_popup.dart';
 import '../widgets/scrollable_data_table.dart';
@@ -751,66 +753,127 @@ class _BatchDetailsScreenState extends State<BatchDetailsScreen>
     if (_controller.products.isEmpty) {
       return const Center(child: Text('Lô hàng chưa có sản phẩm liên kết.'));
     }
-    return ScrollableDataTable(
-      fixedHeader: true,
-      columnWidths: const [160, 240, 100, 180, 180, 140, 160, 64],
-      columns: const [
-        DataColumn(label: Text('MÃ XE / SẢN PHẨM')),
-        DataColumn(label: Text('TÊN SẢN PHẨM')),
-        DataColumn(label: Text('SỐ LƯỢNG')),
-        DataColumn(label: Text('SỐ KHUNG')),
-        DataColumn(label: Text('SỐ MÁY')),
-        DataColumn(label: Text('BIỂN SỐ')),
-        DataColumn(label: Text('GIÁ NHẬP')),
-        DataColumn(label: Text('')),
-      ],
-      rows: [
-        for (final item in _controller.products)
-          DataRow(
-            onSelectChanged: (_) async {
-              await Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => ProductDetailsScreen(
-                    product: ProductReference(
-                      id: item.vehicleId ?? item.productId,
-                      vehicle: item.vehicleId != null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '${quantity(_controller.products.length)} sản phẩm',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            FinanceExcelButton(
+              key: const ValueKey('batch-products-export-excel'),
+              title: 'Lô hàng #${_controller.batch.id}',
+              section: _productsReport,
+              loadedAt: DateTime.now(),
+              kind: ReportKind.receipts,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ScrollableDataTable(
+            fixedHeader: true,
+            columnWidths: const [160, 240, 100, 180, 180, 140, 160, 64],
+            columns: const [
+              DataColumn(label: Text('MÃ XE / SẢN PHẨM')),
+              DataColumn(label: Text('TÊN SẢN PHẨM')),
+              DataColumn(label: Text('SỐ LƯỢNG')),
+              DataColumn(label: Text('SỐ KHUNG')),
+              DataColumn(label: Text('SỐ MÁY')),
+              DataColumn(label: Text('BIỂN SỐ')),
+              DataColumn(label: Text('GIÁ NHẬP')),
+              DataColumn(label: Text('')),
+            ],
+            rows: [
+              for (final item in _controller.products)
+                DataRow(
+                  onSelectChanged: (_) async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => ProductDetailsScreen(
+                          product: ProductReference(
+                            id: item.vehicleId ?? item.productId,
+                            vehicle: item.vehicleId != null,
+                          ),
+                        ),
+                      ),
+                    );
+                    if (mounted) await _controller.load();
+                  },
+                  cells: [
+                    DataCell(Text('${item.vehicleId ?? item.productId}')),
+                    DataCell(
+                      SizedBox(
+                        width: 200,
+                        child: Text(
+                          item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
-                  ),
+                    DataCell(Text(quantity(item.quantity))),
+                    DataCell(
+                      Text(item.frameNumber.isEmpty ? '—' : item.frameNumber),
+                    ),
+                    DataCell(
+                      Text(item.engineNumber.isEmpty ? '—' : item.engineNumber),
+                    ),
+                    DataCell(Text(item.plate.isEmpty ? '—' : item.plate)),
+                    DataCell(Text(money(item.cost))),
+                    DataCell(
+                      RecordLineDeleteButton(
+                        repository: widget.repository.maintenance,
+                        kind: RecordKind.batch,
+                        parentId: widget.batch.id,
+                        lineId: item.sourceId,
+                        onChanged: _controller.load,
+                      ),
+                    ),
+                  ],
                 ),
-              );
-              if (mounted) await _controller.load();
-            },
-            cells: [
-              DataCell(Text('#${item.vehicleId ?? item.productId}')),
-              DataCell(
-                SizedBox(
-                  width: 200,
-                  child: Text(
-                    item.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              DataCell(Text(quantity(item.quantity))),
-              DataCell(Text(item.frameNumber.isEmpty ? '—' : item.frameNumber)),
-              DataCell(
-                Text(item.engineNumber.isEmpty ? '—' : item.engineNumber),
-              ),
-              DataCell(Text(item.plate.isEmpty ? '—' : item.plate)),
-              DataCell(Text(money(item.cost))),
-              DataCell(
-                RecordLineDeleteButton(
-                  repository: widget.repository.maintenance,
-                  kind: RecordKind.batch,
-                  parentId: widget.batch.id,
-                  lineId: item.sourceId,
-                  onChanged: _controller.load,
-                ),
-              ),
             ],
           ),
+        ),
       ],
+    );
+  }
+
+  ReportSection get _productsReport {
+    final products = _controller.products;
+    return ReportSection(
+      columns: const [
+        ReportColumn('Mã xe / sản phẩm'),
+        ReportColumn('Tên sản phẩm', width: 240),
+        ReportColumn('Số lượng'),
+        ReportColumn('Số khung', width: 180),
+        ReportColumn('Số máy', width: 180),
+        ReportColumn('Biển số'),
+        ReportColumn('Giá nhập', money: true),
+      ],
+      rows: [
+        for (final item in products)
+          [
+            item.vehicleId ?? item.productId,
+            item.name,
+            item.quantity,
+            item.frameNumber.isEmpty ? '—' : item.frameNumber,
+            item.engineNumber.isEmpty ? '—' : item.engineNumber,
+            item.plate.isEmpty ? '—' : item.plate,
+            item.cost,
+          ],
+      ],
+      totals: {
+        'Số lượng': products.fold<num>(0, (sum, item) => sum + item.quantity),
+        'Tổng giá nhập': products.fold<num>(
+          0,
+          (sum, item) => sum + (item.cost ?? 0) * item.quantity,
+        ),
+      },
+      notes: ['Lô hàng #${_controller.batch.id} · ${widget.type.title}'],
     );
   }
 }

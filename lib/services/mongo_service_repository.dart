@@ -1,11 +1,12 @@
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/services/service_models.dart';
 import '../models/repositories/service_repository.dart';
 
 class MongoServiceRepository implements ServiceRepository {
   MongoServiceRepository({String? uri})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   Future<void>? _opening;
   Future<void> _connect() => _opening ??= _open().whenComplete(() {

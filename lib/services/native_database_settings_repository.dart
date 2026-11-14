@@ -363,6 +363,11 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
     required String expectedSourceVersion,
     required String expectedTargetVersion,
     required String conflictPolicy,
+    int? expectedSourceOnly,
+    int? expectedTargetOnly,
+    int? expectedConflicts,
+    int? expectedSchemaConflicts,
+    String commitMessage = '',
     required void Function(String) progress,
   }) async {
     await _ensureCloudSupport();
@@ -374,6 +379,11 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
         'expectedSourceVersion': expectedSourceVersion,
         'expectedTargetVersion': expectedTargetVersion,
         'conflictPolicy': conflictPolicy,
+        'expectedSourceOnly': expectedSourceOnly,
+        'expectedTargetOnly': expectedTargetOnly,
+        'expectedConflicts': expectedConflicts,
+        'expectedSchemaConflicts': expectedSchemaConflicts,
+        'commitMessage': commitMessage,
       },
       progress: progress,
       timeout: const Duration(hours: 2),
@@ -389,6 +399,13 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
               Map<String, dynamic>.from(data['version'] as Map),
             )
           : null,
+      commitId: data['commit'] is Map
+          ? (data['commit'] as Map)['commitId'] as String?
+          : null,
+      changes: data['changes'] is Map
+          ? Map<String, dynamic>.from(data['changes'] as Map)
+          : const {},
+      incremental: data['incremental'] == true,
     );
   }
 

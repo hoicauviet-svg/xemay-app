@@ -1,6 +1,7 @@
 import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/finance/finance_models.dart';
 import '../models/finance/opening_debt.dart';
@@ -8,7 +9,7 @@ import '../models/repositories/opening_debt_repository.dart';
 
 class MongoOpeningDebtRepository implements OpeningDebtRepository {
   MongoOpeningDebtRepository({String? uri, this.checkpoint})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   @override
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, _connect);

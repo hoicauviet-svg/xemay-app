@@ -43,6 +43,7 @@ class _ReportsViewState extends State<ReportsView>
   late final ReportsController _controller;
   late final TabController _tabs;
   bool _exporting = false;
+  bool _receiptDetails = false;
   String _quickRange = 'today';
   ReportKind _pawnMode = ReportKind.pawnDebt;
   ReportKind _debtMode = ReportKind.debts;
@@ -572,7 +573,9 @@ class _ReportsViewState extends State<ReportsView>
         ),
       );
     }
-    final section = _controller.section(kind);
+    final section = kind == ReportKind.receipts && _receiptDetails
+        ? _controller.data?.receiptDetails
+        : _controller.section(kind);
     if (section == null) return const SizedBox.shrink();
     final rows = section.rows;
     final timing = kind == ReportKind.customerDebt ? _customerDebtTiming : null;
@@ -601,6 +604,19 @@ class _ReportsViewState extends State<ReportsView>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (kind == ReportKind.receipts) ...[
+            SegmentedButton<bool>(
+              key: const ValueKey('receipts-view-mode'),
+              segments: const [
+                ButtonSegment(value: false, label: Text('Tổng lô nhập')),
+                ButtonSegment(value: true, label: Text('Chi tiết sản phẩm')),
+              ],
+              selected: {_receiptDetails},
+              onSelectionChanged: (value) =>
+                  setState(() => _receiptDetails = value.single),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (kind == ReportKind.sales) ...[
             SalesCharts(
               byGroup: {
@@ -624,7 +640,7 @@ class _ReportsViewState extends State<ReportsView>
               ),
             ),
           ],
-          if (kind == ReportKind.receipts) ...[
+          if (kind == ReportKind.receipts && !_receiptDetails) ...[
             GroupShareChart(
               chartKey: const ValueKey('receipts-group-pie'),
               title: 'Tiền nhập theo nhóm',
@@ -851,11 +867,7 @@ class _ReportsViewState extends State<ReportsView>
           180,
           [0, 1],
         ),
-        _ReportGroup(
-          'Nhà cung cấp',
-          350,
-          [2, 3, 4],
-        ),
+        _ReportGroup('Nhà cung cấp', 350, [2, 3, 4]),
         _ReportGroup('Thanh toán', 260, [5, 6, 7]),
         _ReportGroup('Ngày hẹn / Quá hạn', 210, [8, 9]),
       ];
@@ -940,7 +952,9 @@ class _ReportsViewState extends State<ReportsView>
   }
 
   Widget _exportButton(ReportKind kind) {
-    final section = _controller.section(kind);
+    final section = kind == ReportKind.receipts && _receiptDetails
+        ? _controller.data?.receiptDetails
+        : _controller.section(kind);
     return FilledButton.icon(
       key: const ValueKey('report-export-excel'),
       onPressed:
@@ -1045,7 +1059,8 @@ class _ReportsViewState extends State<ReportsView>
     final cash = data.cashflow;
     final salesProfit =
         sales?.totals['Lợi nhuận'] ?? sales?.totals['Lợi nhuận đã xác định'];
-    final netProfit = salesProfit == null ||
+    final netProfit =
+        salesProfit == null ||
             cash.income['Cầm đồ - lãi'] == null ||
             cash.income['Thu khác'] == null ||
             cash.expense['Chi khác'] == null ||
@@ -1077,7 +1092,9 @@ class _ReportsViewState extends State<ReportsView>
         return [
           label,
           for (final value in values)
-            value == null ? null : NumberFormat.decimalPattern('vi').format(value),
+            value == null
+                ? null
+                : NumberFormat.decimalPattern('vi').format(value),
           sales?.totals[key] == null
               ? null
               : NumberFormat.decimalPattern('vi').format(sales!.totals[key]!),
@@ -1098,6 +1115,39 @@ class _ReportsViewState extends State<ReportsView>
       null,
       amount,
     ];
+    final stock = data.sections[ReportKind.stock];
+    num? stockCell(String name, int index) {
+      for (final row in stock?.rows ?? const <List<dynamic>>[]) {
+        if (row.isNotEmpty &&
+            row[0] == name &&
+            row.length > index &&
+            row[index] is num) {
+          return row[index] as num;
+        }
+      }
+      return null;
+    }
+
+    num? stockTotal(int index) {
+      final values = [
+        for (final name in ['Xe mới', 'Xe cũ', 'Phụ tùng'])
+          stockCell(name, index),
+      ];
+      if (values.any((value) => value == null)) return null;
+      return values.fold<num>(0, (sum, value) => sum + value!);
+    }
+
+    String? countText(num? value) =>
+        value == null ? null : NumberFormat.decimalPattern('vi').format(value);
+    final supplierDebt =
+        data.sections[ReportKind.debts]?.totals['Nợ nhà cung cấp'];
+    final fundingDebt = data.sections[ReportKind.debts]?.totals['Vay vốn'];
+    final openingDebt = data.sections[ReportKind.debts]?.totals['Nợ cũ'];
+    final pawnDebt = data.sections[ReportKind.pawnDebt]?.totals['Còn nợ'];
+    final saleDebt = data.sections[ReportKind.customerDebt]?.totals['Còn nợ'];
+    num? debtTotal(List<num?> values) => values.any((value) => value == null)
+        ? null
+        : values.fold<num>(0, (sum, value) => sum + value!);
     final rows = <List<dynamic>>[
       block('BÁN HÀNG'),
       salesRow('Số lượng', 'Số lượng'),
@@ -1106,21 +1156,74 @@ class _ReportsViewState extends State<ReportsView>
       salesRow('Chi phí', 'Chi phí'),
       salesRow('Giảm giá', 'Giảm giá'),
       salesRow('Lợi nhuận bán hàng', 'Lợi nhuận'),
-      block('THU CHI KHÁC'),
+      block('CẦM ĐỒ'),
       amountRow('Lãi cầm đồ', cash.income['Cầm đồ - lãi']),
-      amountRow(
-        'Thu nợ - gốc',
-        cash.income['Thu nợ - gốc'],
-      ),
-      amountRow(
-        'Thu nợ - lãi',
-        cash.income['Thu nợ - lãi'],
-      ),
+      block('THU KHÁC'),
       amountRow('Thu khác', cash.income['Thu khác']),
+      block('CHI KHÁC'),
       amountRow('Chi khác', cash.expense['Chi khác']),
+      block('TRẢ LÃI VAY VỐN'),
       amountRow('Trả lãi vay vốn', cash.expense['Trả lãi vay vốn']),
       block('KẾT QUẢ'),
-      amountRow('Lãi', netProfit),
+      amountRow('Lợi nhuận tổng', netProfit),
+      block('THU'),
+      amountRow('Bán hàng', cash.income['Bán hàng']),
+      amountRow(
+        '  Xe mới',
+        cash.salesByProductGroup[ReportProductGroup.newVehicles],
+      ),
+      amountRow(
+        '  Xe cũ',
+        cash.salesByProductGroup[ReportProductGroup.usedVehicles],
+      ),
+      amountRow(
+        '  Phụ tùng',
+        cash.salesByProductGroup[ReportProductGroup.parts],
+      ),
+      amountRow(
+        '  Dịch vụ',
+        cash.salesByProductGroup[ReportProductGroup.services],
+      ),
+      amountRow('Lãi cầm đồ', cash.income['Cầm đồ - lãi']),
+      amountRow('Gốc cầm đồ', cash.income['Cầm đồ - gốc']),
+      amountRow('Thu nợ - gốc', cash.income['Thu nợ - gốc']),
+      amountRow('Thu nợ - lãi', cash.income['Thu nợ - lãi']),
+      amountRow('Thu khác', cash.income['Thu khác']),
+      amountRow('Vay vốn', cash.income['Vay vốn']),
+      amountRow('Tổng thu', cash.totalIncome),
+      block('CHI'),
+      for (final entry in cash.expense.entries)
+        amountRow(entry.key, entry.value),
+      amountRow('Tổng chi', cash.totalExpense),
+      block('KHO HÀNG'),
+      [
+        'Số lượng',
+        countText(stockCell('Xe mới', 1)),
+        countText(stockCell('Xe cũ', 1)),
+        countText(stockCell('Phụ tùng', 1)),
+        null,
+        countText(stockTotal(1)),
+      ],
+      [
+        'Giá trị',
+        stockCell('Xe mới', 2),
+        stockCell('Xe cũ', 2),
+        stockCell('Phụ tùng', 2),
+        null,
+        stockTotal(2),
+      ],
+      block('CỬA HÀNG NỢ'),
+      amountRow('Nợ nhà cung cấp', supplierDebt),
+      amountRow('Vay vốn', fundingDebt),
+      amountRow('Tổng cửa hàng nợ', debtTotal([supplierDebt, fundingDebt])),
+      block('KHÁCH HÀNG NỢ'),
+      amountRow('Cầm đồ', pawnDebt),
+      amountRow('Nợ bán hàng', saleDebt),
+      amountRow('Nợ cũ', openingDebt),
+      amountRow(
+        'Tổng khách hàng nợ',
+        debtTotal([pawnDebt, saleDebt, openingDebt]),
+      ),
     ];
     return ReportSection(
       columns: const [
@@ -1155,14 +1258,17 @@ class _ReportsViewState extends State<ReportsView>
           builder: (_) => DocumentPreviewScreen(
             bytes: bytes,
             title: 'Báo cáo tổng',
-            fileName: 'bao-cao-tong-${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+            fileName:
+                'bao-cao-tong-${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
           ),
         ),
       );
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chưa tạo được bản PDF. Vui lòng thử lại.')),
+          const SnackBar(
+            content: Text('Chưa tạo được bản PDF. Vui lòng thử lại.'),
+          ),
         );
       }
     } finally {
@@ -1190,6 +1296,7 @@ class _ReportsViewState extends State<ReportsView>
           'Số đơn',
           'Số lô',
           'Số lượng',
+          'Số dòng sản phẩm',
           'Phiếu mới',
           'Phiếu đang cầm',
         ].contains(label);

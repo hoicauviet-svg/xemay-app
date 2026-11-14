@@ -2,13 +2,14 @@ import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import '../models/finance/cash_category.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/finance/finance_models.dart';
 import '../models/repositories/finance_repository.dart';
 
 class MongoFinanceRepository implements FinanceRepository {
   MongoFinanceRepository({String? uri, this.checkpoint})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   @override
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, _connect);

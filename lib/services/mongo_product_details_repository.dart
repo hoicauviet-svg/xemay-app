@@ -3,13 +3,14 @@ import 'cost_delete_repair.dart';
 import 'mongo_record_maintenance.dart';
 import 'mongo_product_cash.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/products/product_details.dart';
 import '../models/repositories/product_details_repository.dart';
 
 class MongoProductDetailsRepository implements ProductDetailsRepository {
   MongoProductDetailsRepository({String? uri})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   @override
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, _connect);

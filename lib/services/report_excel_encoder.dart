@@ -65,6 +65,7 @@ class ReportExcelEncoder {
             'Số đơn',
             'Số lô',
             'Số lượng',
+            'Số dòng sản phẩm',
             'Phiếu mới',
             'Phiếu đang cầm',
             'Tồn kho',
@@ -86,7 +87,8 @@ class ReportExcelEncoder {
     }
     rows.write('</row>');
     for (final record in section.rows) {
-      final marker = kind == ReportKind.overview &&
+      final marker =
+          kind == ReportKind.overview &&
           record.isNotEmpty &&
           record[0] is String &&
           (record[0] as String).startsWith('@@');

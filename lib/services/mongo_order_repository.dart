@@ -2,6 +2,7 @@ import 'customer_address_migration.dart';
 import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/orders/order_details.dart';
 import '../models/repositories/order_repository.dart';
@@ -11,7 +12,7 @@ class MongoOrderRepository implements OrderRepository {
     String? uri,
     this.checkpoint,
     DateTime Function()? today,
-  }) : _db = Db(uri ?? DatabaseConfig.mongoUri),
+  }) : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri),
        _today = today ?? DateTime.now;
   final DateTime Function() _today;
   final Db _db;

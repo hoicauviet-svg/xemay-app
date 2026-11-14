@@ -45,11 +45,13 @@ class FinanceExcelButton extends StatefulWidget {
     required this.section,
     required this.loadedAt,
     this.exporter,
+    this.kind = ReportKind.debts,
   });
   final String title;
   final ReportSection section;
   final DateTime loadedAt;
   final FinanceReportExporter? exporter;
+  final ReportKind kind;
   @override
   State<FinanceExcelButton> createState() => _FinanceExcelButtonState();
 }
@@ -62,11 +64,14 @@ class _FinanceExcelButtonState extends State<FinanceExcelButton> {
         time = widget.loadedAt;
     setState(() => _saving = true);
     try {
-      final saved = await (widget.exporter ?? ReportExcelService.saveNamed)(
-        title,
-        section,
-        time,
-      );
+      final saved = widget.exporter == null
+          ? await ReportExcelService.saveNamed(
+              title,
+              section,
+              time,
+              kind: widget.kind,
+            )
+          : await widget.exporter!(title, section, time);
       if (saved && mounted) {
         ScaffoldMessenger.of(
           context,

@@ -17,8 +17,9 @@ class ReportExcelService {
   static Future<bool> saveNamed(
     String title,
     ReportSection section,
-    DateTime loadedAt,
-  ) => _save(ReportKind.debts, section, ReportRange(), loadedAt, title: title);
+    DateTime loadedAt, {
+    ReportKind kind = ReportKind.debts,
+  }) => _save(kind, section, ReportRange(), loadedAt, title: title);
 
   static Future<bool> _save(
     ReportKind kind,

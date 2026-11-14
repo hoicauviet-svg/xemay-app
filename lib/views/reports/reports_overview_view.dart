@@ -41,10 +41,20 @@ class ReportsOverviewView extends StatelessWidget {
         sales?.totals['Lợi nhuận'] ?? sales?.totals['Lợi nhuận đã xác định'];
     final pawnInterest = cashflow.income['Cầm đồ - lãi'];
     final otherIncome = cashflow.income['Thu khác'];
+    final otherExpense = cashflow.expense['Chi khác'];
+    final loanInterest = cashflow.expense['Trả lãi vay vốn'];
     final overallProfit =
-        salesProfit == null || pawnInterest == null || otherIncome == null
+        salesProfit == null ||
+            pawnInterest == null ||
+            otherIncome == null ||
+            otherExpense == null ||
+            loanInterest == null
         ? null
-        : salesProfit + pawnInterest + otherIncome;
+        : salesProfit +
+              pawnInterest +
+              otherIncome -
+              otherExpense -
+              loanInterest;
     return LayoutBuilder(
       builder: (context, constraints) {
         final salesTable = _profitPanel(
@@ -167,12 +177,26 @@ class ReportsOverviewView extends StatelessWidget {
             const SizedBox(height: 12),
             _profitValueTable('Thu khác', 'Thu khác', otherIncome),
             const SizedBox(height: 12),
+            _profitValueTable('Chi khác', 'Chi khác', otherExpense),
+            const SizedBox(height: 12),
+            _profitValueTable(
+              'Trả lãi vay vốn',
+              'Trả lãi vay vốn',
+              loanInterest,
+            ),
+            const SizedBox(height: 12),
             _profitValueTable('Lợi nhuận tổng', 'Lợi Nhuận', overallProfit),
           ],
         );
         final chart = Column(
           children: [
-            _profitChart(sales, cashflow),
+            _profitChart(
+              salesProfit,
+              pawnInterest,
+              otherIncome,
+              otherExpense,
+              loanInterest,
+            ),
             const SizedBox(height: 14),
             _salesGroupChart(sections),
           ],
@@ -198,16 +222,19 @@ class ReportsOverviewView extends StatelessWidget {
   bool _emphasizeProfitRow(String label) =>
       label == 'Lợi nhuận bán hàng' || label == 'Lợi Nhuận';
 
-  Widget _profitChart(ReportSection? sales, ReportCashflow cashflow) =>
-      _pieBreakdown('Biểu đồ lợi nhuận', [
-        (
-          'Bán hàng',
-          sales?.totals['Lợi nhuận'] ?? sales?.totals['Lợi nhuận đã xác định'],
-          const Color(0xFF0E8A6A),
-        ),
-        ('Cầm đồ', cashflow.income['Cầm đồ - lãi'], const Color(0xFF8B45C4)),
-        ('Thu khác', cashflow.income['Thu khác'], const Color(0xFF2F6FE4)),
-      ], lossNote: true);
+  Widget _profitChart(
+    num? salesProfit,
+    num? pawnInterest,
+    num? otherIncome,
+    num? otherExpense,
+    num? loanInterest,
+  ) => _pieBreakdown('Biểu đồ lợi nhuận', [
+    ('Bán hàng', salesProfit, const Color(0xFF0E8A6A), true),
+    ('Cầm đồ', pawnInterest, const Color(0xFF8B45C4), true),
+    ('Thu khác', otherIncome, const Color(0xFF2F6FE4), true),
+    ('Chi khác', otherExpense, const Color(0xFFD23B4A), false),
+    ('Trả lãi vay vốn', loanInterest, const Color(0xFFB45309), false),
+  ], lossNote: true);
 
   Widget _profitValueTable(String title, String label, num? amount) =>
       _profitPanel(
@@ -235,36 +262,41 @@ class ReportsOverviewView extends StatelessWidget {
           ReportProductGroup.newVehicles.label,
           sections[ReportProductGroup.newVehicles]?.totals['Doanh thu'],
           const Color(0xFF0E8A6A),
+          true,
         ),
         (
           ReportProductGroup.usedVehicles.label,
           sections[ReportProductGroup.usedVehicles]?.totals['Doanh thu'],
           const Color(0xFFE36A1E),
+          true,
         ),
         (
           ReportProductGroup.parts.label,
           sections[ReportProductGroup.parts]?.totals['Doanh thu'],
           const Color(0xFF2F6FE4),
+          true,
         ),
         (
           ReportProductGroup.services.label,
           sections[ReportProductGroup.services]?.totals['Doanh thu'],
           const Color(0xFF8B45C4),
+          true,
         ),
       ]);
 
   Widget _pieBreakdown(
     String title,
-    List<(String, num?, Color)> values, {
+    List<(String, num?, Color, bool)> values, {
     bool lossNote = false,
   }) {
     final slices = [
-      for (final (label, amount, color) in values)
-        if (amount != null && amount > 0) (label, amount, color),
+      for (final (label, amount, color, inPie) in values)
+        if (inPie && amount != null && amount > 0) (label, amount, color),
     ];
     final total = slices.fold<num>(0, (sum, slice) => sum + slice.$2);
     final hasLoss =
-        lossNote && values.any((item) => item.$2 != null && item.$2! < 0);
+        lossNote &&
+        values.any((item) => item.$4 && item.$2 != null && item.$2! < 0);
     return _profitPanel(
       title,
       Column(
@@ -292,8 +324,8 @@ class ReportsOverviewView extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final (label, amount, color) in values)
-                      _profitLegend(label, amount, color, total),
+                    for (final (label, amount, color, inPie) in values)
+                      _profitLegend(label, amount, color, total, share: inPie),
                   ],
                 ),
               ),
@@ -303,7 +335,7 @@ class ReportsOverviewView extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(top: 12),
               child: Text(
-                'Khoản lợi nhuận âm không thể hiện thành lát biểu đồ.',
+                'Khoản âm không thể hiện thành lát biểu đồ.',
                 style: TextStyle(fontSize: 12, color: Color(0xFF65736B)),
               ),
             ),
@@ -315,14 +347,19 @@ class ReportsOverviewView extends StatelessWidget {
   Widget _profitPanel(String title, Widget child) {
     final isSalesChart = title.contains('theo nhóm');
     final isChart = title.contains('Biểu đồ') || isSalesChart;
-    final accent = isSalesChart || title == 'Thu khác'
+    final isExpense = title == 'Chi khác' || title == 'Trả lãi vay vốn';
+    final accent = isExpense
+        ? const Color(0xFFD23B4A)
+        : isSalesChart || title == 'Thu khác'
         ? const Color(0xFF2F6FE4)
         : title == 'Cầm đồ'
         ? const Color(0xFF8B45C4)
         : isChart || title == 'Bán hàng' || title == 'Lợi nhuận tổng'
         ? const Color(0xFF0E8A6A)
         : const Color(0xFF65736B);
-    final background = isSalesChart || title == 'Thu khác'
+    final background = isExpense
+        ? const Color(0xFFFDF4F5)
+        : isSalesChart || title == 'Thu khác'
         ? const Color(0xFFF3F6FD)
         : title == 'Cầm đồ'
         ? const Color(0xFFF8F2FC)
@@ -353,8 +390,14 @@ class ReportsOverviewView extends StatelessWidget {
     );
   }
 
-  Widget _profitLegend(String label, num? amount, Color color, num total) {
-    final percent = amount != null && amount > 0 && total > 0
+  Widget _profitLegend(
+    String label,
+    num? amount,
+    Color color,
+    num total, {
+    bool share = true,
+  }) {
+    final percent = share && amount != null && amount > 0 && total > 0
         ? (amount / total * 100).round()
         : null;
     final markerColor = amount != null && amount < 0
@@ -437,30 +480,88 @@ class ReportsOverviewView extends StatelessWidget {
   );
 
   Widget _stockSummary(ReportSection? stock) {
-    final rows = stock?.rows ?? const <List<dynamic>>[];
-    num? totalValue;
-    if (rows.every((row) => row.length > 2 && row[2] is num)) {
-      totalValue = rows.fold<num>(0, (sum, row) => sum + (row[2] as num));
+    const groups = ['Xe mới', 'Xe cũ', 'Phụ tùng'];
+    final byName = <String, List<dynamic>>{
+      for (final row in stock?.rows ?? const <List<dynamic>>[])
+        if (row.isNotEmpty) '${row[0]}': row,
+    };
+    num? cell(String group, int index) {
+      final row = byName[group];
+      if (row == null || row.length <= index || row[index] is! num) return null;
+      return row[index] as num;
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _metricSummary([('Tổng giá trị', totalValue, true)]),
-        const Divider(height: 16),
-        for (final row in rows)
-          if (row.length >= 3)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Row(
-                children: [
-                  Expanded(child: Text('${row[0]}')),
-                  Text(row[1] is num ? quantity(row[1] as num) : '—'),
-                  const SizedBox(width: 16),
-                  Text(row[2] is num ? money(row[2] as num) : '—'),
-                ],
+
+    num? total(int index) {
+      final values = [for (final group in groups) cell(group, index)];
+      if (values.any((value) => value == null)) return null;
+      return values.fold<num>(0, (sum, value) => sum + value!);
+    }
+
+    String shown(num? value, bool isMoney) => value == null
+        ? '—'
+        : isMoney
+        ? money(value)
+        : quantity(value);
+    const metrics = [('Số lượng', 1, false), ('Giá trị', 2, true)];
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: constraints.maxWidth),
+          child: DataTable(
+            horizontalMargin: 12,
+            columnSpacing: 24,
+            headingRowHeight: 44,
+            dataRowMinHeight: 44,
+            dataRowMaxHeight: 52,
+            columns: [
+              const DataColumn(label: Text('')),
+              for (final group in groups)
+                DataColumn(
+                  numeric: true,
+                  label: Text(
+                    group,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              const DataColumn(
+                numeric: true,
+                label: Text(
+                  'Tổng',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
-            ),
-      ],
+            ],
+            rows: [
+              for (final (label, index, isMoney) in metrics)
+                DataRow(
+                  cells: [
+                    DataCell(
+                      Text(
+                        label,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    for (final group in groups)
+                      DataCell(
+                        Text(
+                          shown(cell(group, index), isMoney),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    DataCell(
+                      Text(
+                        shown(total(index), isMoney),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -473,6 +574,26 @@ class ReportsOverviewView extends StatelessWidget {
 
     final incomeRows = <(String, num?, bool)>[
       ('Bán hàng', cashflow.income['Bán hàng'], false),
+      (
+        'Xe mới',
+        cashflow.salesByProductGroup[ReportProductGroup.newVehicles],
+        true,
+      ),
+      (
+        'Xe cũ',
+        cashflow.salesByProductGroup[ReportProductGroup.usedVehicles],
+        true,
+      ),
+      (
+        'Phụ tùng',
+        cashflow.salesByProductGroup[ReportProductGroup.parts],
+        true,
+      ),
+      (
+        'Dịch vụ',
+        cashflow.salesByProductGroup[ReportProductGroup.services],
+        true,
+      ),
       ('Cầm đồ', sumPair('Cầm đồ - gốc', 'Cầm đồ - lãi'), false),
       ('Gốc', cashflow.income['Cầm đồ - gốc'], true),
       ('Lãi', cashflow.income['Cầm đồ - lãi'], true),

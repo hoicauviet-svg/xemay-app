@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/repositories/sales_repository.dart';
 import '../models/sales/sale_models.dart';
@@ -9,7 +10,7 @@ import '../models/sales/sale_models.dart';
 /// Reserve atomically, then either release before commit or roll forward after it.
 class MongoSalesRepository implements SalesRepository {
   MongoSalesRepository({String? uri, this.checkpoint})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   final Future<void> Function(String)? checkpoint;
   final String _owner = ObjectId().oid;

@@ -121,6 +121,13 @@ class MongoDataBackup {
     final db = await _open(mongoUri);
     var started = false;
     try {
+      await db.collection('_sync_state').updateOne(
+        {'_id': 'journal'},
+        {
+          r'$set': {'needsFullScan': true},
+        },
+        upsert: true,
+      );
       await _replace(db, entries, progress, () => started = true);
       return MongoBackupResult(
         database: db.databaseName ?? '',

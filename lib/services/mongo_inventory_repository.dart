@@ -1,4 +1,5 @@
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import 'cost_delete_repair.dart';
 import '../models/inventory/inventory_models.dart';
@@ -7,7 +8,7 @@ import '../models/repositories/inventory_repository.dart';
 /// Local desktop repository. Reads only until editing workflows are implemented.
 class MongoInventoryRepository implements InventoryRepository {
   MongoInventoryRepository({String? uri})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   Future<void>? _pendingConnection;
 

@@ -2,13 +2,14 @@ import 'customer_address_migration.dart';
 import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/pawn/pawn_models.dart';
 import '../models/repositories/pawn_repository.dart';
 
 class MongoPawnRepository implements PawnRepository {
   MongoPawnRepository({String? uri, this.checkpoint})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   bool _addressesReady = false;
   @override

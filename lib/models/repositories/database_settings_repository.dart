@@ -21,6 +21,11 @@ abstract class DatabaseSettingsRepository {
     required String expectedSourceVersion,
     required String expectedTargetVersion,
     required String conflictPolicy,
+    int? expectedSourceOnly,
+    int? expectedTargetOnly,
+    int? expectedConflicts,
+    int? expectedSchemaConflicts,
+    String commitMessage = '',
     required void Function(String) progress,
   });
   Future<MongoBackupResult> backupMongo({

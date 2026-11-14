@@ -1,12 +1,13 @@
 import 'customer_address_migration.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/customers/customer_models.dart';
 import '../models/repositories/customer_repository.dart';
 
 class MongoCustomerRepository implements CustomerRepository {
   MongoCustomerRepository({String? uri})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   bool _addressesReady = false;
   Future<void>? _opening;

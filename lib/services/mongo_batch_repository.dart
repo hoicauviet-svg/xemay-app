@@ -1,6 +1,7 @@
 import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/batches/batch_models.dart';
 import '../models/goods_receipt/goods_receipt_models.dart';
@@ -9,7 +10,7 @@ import '../models/repositories/batch_repository.dart';
 /// Read-only access to lots and their actual source relationships.
 class MongoBatchRepository implements BatchRepository {
   MongoBatchRepository({String? uri, this.checkpoint})
-    : _db = Db(uri ?? DatabaseConfig.mongoUri);
+    : _db = SyncTrackedDb(uri ?? DatabaseConfig.mongoUri);
   final Db _db;
   @override
   RecordMaintenance get maintenance => MongoRecordMaintenance(_db, connect);

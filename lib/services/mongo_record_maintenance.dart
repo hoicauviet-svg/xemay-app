@@ -1,5 +1,6 @@
 import '../models/pawn/pawn_models.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'mongo_sync_journal.dart';
 import '../models/maintenance/record_maintenance.dart';
 import '../core/config/database_config.dart';
 import '../models/finance/cash_category.dart';
@@ -10,7 +11,7 @@ import 'cost_delete_repair.dart';
 class MongoRecordMaintenance implements RecordMaintenance {
   MongoRecordMaintenance(this.db, this.connect, {this.checkpoint});
   factory MongoRecordMaintenance.local() {
-    final db = Db(DatabaseConfig.mongoUri);
+    final db = SyncTrackedDb(DatabaseConfig.mongoUri);
     var repairing = false;
     return MongoRecordMaintenance(db, () async {
       if (!db.isConnected) await db.open(writeConcern: WriteConcern.journaled);

@@ -18,6 +18,7 @@ class DatabaseSettingsController extends ChangeNotifier {
   MongoInstallationStatus? mongo, cloud;
   CloudComparison? comparison;
   bool? _comparisonUpload;
+  bool? get comparisonUpload => _comparisonUpload;
   DatabaseCloneResult? cloneResult;
   bool busy = false, loaded = false, _disposed = false;
   SettingsSection _operationSection = SettingsSection.mongo;
@@ -210,6 +211,18 @@ class DatabaseSettingsController extends ChangeNotifier {
     _validateMongo(settings.cloudUri);
   }
 
+  String? _databaseName(String uri) {
+    try {
+      final parts = Uri.parse(uri).pathSegments;
+      return parts.isEmpty ? null : parts.last;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _uriForDatabase(String uri, String database) =>
+      Uri.parse(uri).replace(path: '/$database').toString();
+
   Future<void> compareCloud({required bool upload}) =>
       _perform(SettingsSection.cloud, () async {
         comparison = null;
@@ -242,6 +255,7 @@ class DatabaseSettingsController extends ChangeNotifier {
   Future<void> syncCloud({
     required bool upload,
     String conflictPolicy = 'abort',
+    String commitMessage = '',
   }) => _perform(SettingsSection.cloud, () async {
     _validateSync();
     final preview = comparison;
@@ -268,6 +282,11 @@ class DatabaseSettingsController extends ChangeNotifier {
         expectedSourceVersion: preview.sourceVersion.version,
         expectedTargetVersion: preview.targetVersion.version,
         conflictPolicy: conflictPolicy,
+        expectedSourceOnly: preview.sourceOnly,
+        expectedTargetOnly: preview.targetOnly,
+        expectedConflicts: preview.conflicts,
+        expectedSchemaConflicts: preview.schemaConflicts,
+        commitMessage: commitMessage.trim(),
         progress: (line) {
           if (_disposed) return;
           progress.add(line);
@@ -290,7 +309,7 @@ class DatabaseSettingsController extends ChangeNotifier {
             conflictPolicy: conflictPolicy,
           ),
           ...settings.syncHistory,
-        ].take(50).toList(),
+        ].take(200).toList(),
       );
       try {
         await repository.save(failed);
@@ -315,14 +334,78 @@ class DatabaseSettingsController extends ChangeNotifier {
           rows: result.rows,
           collections: result.collections,
           conflictPolicy: conflictPolicy,
+          message: commitMessage.trim(),
+          localDatabase: _databaseName(
+            upload ? result.sourceMongoUri! : result.mongoUri,
+          ),
+          cloudDatabase: _databaseName(
+            upload ? result.mongoUri : result.sourceMongoUri!,
+          ),
+          commitId: result.commitId,
+          changes: result.changes,
         ),
         ...settings.syncHistory,
-      ].take(50).toList(),
+      ].take(200).toList(),
     );
     await repository.save(next);
     settings = next;
-    message =
-        '${upload ? 'Đã đồng bộ lên cloud' : 'Đã tải về và sử dụng dữ liệu trên máy'}: ${result.collections} bảng, ${result.rows} dòng. Bản dữ liệu trước vẫn được giữ lại.';
+    message = result.incremental
+        ? '${upload ? 'Đã đồng bộ lên cloud' : 'Đã tải dữ liệu từ cloud'} từ nhật ký thay đổi: ${result.changes['sourceOnly'] ?? 0} thay đổi từ nguồn, ${result.changes['targetOnly'] ?? 0} từ đích, ${result.changes['conflicts'] ?? 0} xung đột.'
+        : '${upload ? 'Đã đồng bộ lên cloud' : 'Đã tải về và sử dụng dữ liệu trên máy'}: ${result.collections} bảng, ${result.rows} dòng. Bản dữ liệu trước vẫn được giữ lại.';
+  });
+
+  Future<void> useSyncVersion(
+    SyncHistoryEntry entry,
+  ) => _perform(SettingsSection.cloud, () async {
+    final version = entry.version;
+    final localDatabase = entry.localDatabase;
+    final cloudDatabase = entry.cloudDatabase;
+    if (!entry.success ||
+        version == null ||
+        localDatabase == null ||
+        cloudDatabase == null ||
+        !RegExp(r'^[A-Za-z0-9_]+$').hasMatch(localDatabase) ||
+        !RegExp(r'^[A-Za-z0-9_]+$').hasMatch(cloudDatabase)) {
+      throw const DatabaseSettingsException(
+        'Phiên bản này chưa có đủ thông tin để chuyển đổi.',
+      );
+    }
+    final localUri = _uriForDatabase(settings.mongoUri, localDatabase);
+    final cloudUri = _uriForDatabase(settings.cloudUri, cloudDatabase);
+    _checkSwitch(localUri);
+    _validateMongo(localUri);
+    _validateMongo(cloudUri);
+    progress.clear();
+    final verification = await repository.compareCloud(
+      sourceUri: localUri,
+      targetUri: cloudUri,
+      progress: _note,
+    );
+    if (verification.sourceVersion.version != version.version ||
+        verification.targetVersion.version != version.version) {
+      throw const DatabaseSettingsException(
+        'Nội dung hai bản lưu không khớp lịch sử. Chưa chuyển dữ liệu đang dùng.',
+      );
+    }
+    final next = settings.copyWith(
+      mongoUri: localUri,
+      cloudUri: cloudUri,
+      databaseVersion: version,
+      cloudVersion: version,
+    );
+    await repository.save(next);
+    settings = next;
+    mongo = MongoInstallationStatus(
+      installed: true,
+      connected: true,
+      database: localDatabase,
+    );
+    cloud = MongoInstallationStatus(
+      installed: true,
+      connected: true,
+      database: cloudDatabase,
+    );
+    message = 'Đã chuyển về ${version.label}. Các phiên bản khác vẫn được giữ.';
   });
 
   void _note(String line) {
