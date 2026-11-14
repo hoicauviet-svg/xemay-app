@@ -21,6 +21,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (find.text('Để sau').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Để sau'));
+      await tester.pumpAndSettle();
+    }
     expect(find.byTooltip('Mở bán hàng'), findsOneWidget);
     await tester.tap(find.text('Sản phẩm').first);
     await tester.pumpAndSettle();
@@ -68,7 +72,7 @@ void main() {
       tester
           .widget<TextFormField>(find.byKey(const ValueKey('sales-price-xe-7')))
           .initialValue,
-      '1000000',
+      '1.000.000',
     );
     await tester.tap(find.byTooltip('Bỏ khỏi đơn'));
     await tester.pumpAndSettle();

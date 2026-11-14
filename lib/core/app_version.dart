@@ -1,7 +1,7 @@
 /// Installed version. Keep in sync with `version` in pubspec.yaml.
 class AppVersion {
   static const name = '1.0.1';
-  static const build = 16;
+  static const build = 17;
   static const label = '$name+$build';
 }
 

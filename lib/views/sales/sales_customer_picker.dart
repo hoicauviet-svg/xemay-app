@@ -49,19 +49,22 @@ class _SalesCustomerPickerState extends State<SalesCustomerPicker> {
   }
 
   @override
-  Widget build(BuildContext context) => RawAutocomplete<Map<String, dynamic>>(
-    textEditingController: _text,
-    focusNode: _focus,
-    displayStringForOption: (row) => '${row['TenKhachHang']}',
-    optionsBuilder: (value) => widget.controller.searchCustomers(value.text),
-    onSelected: (row) {
-      widget.controller.selectCustomer(row);
-      _focus.unfocus();
-    },
-    fieldViewBuilder: (context, text, focus, onSubmit) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListenableBuilder(
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      RawAutocomplete<Map<String, dynamic>>(
+        textEditingController: _text,
+        focusNode: _focus,
+        optionsViewOpenDirection: OptionsViewOpenDirection.down,
+        displayStringForOption: (row) => '${row['TenKhachHang']}',
+        optionsBuilder: (value) =>
+            widget.controller.searchCustomers(value.text),
+        onSelected: (row) {
+          widget.controller.selectCustomer(row);
+          _focus.unfocus();
+        },
+        fieldViewBuilder: (context, text, focus, onSubmit) => ListenableBuilder(
           listenable: focus,
           builder: (context, _) => Container(
             key: const ValueKey('sales-customer-surface'),
@@ -107,59 +110,56 @@ class _SalesCustomerPickerState extends State<SalesCustomerPicker> {
             ),
           ),
         ),
-        SizedBox(
-          key: const ValueKey('sales-customer-details'),
-          height: SalesCustomerPicker.footerHeight(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _detailLine(
-                widget.controller.customerError ??
-                    (widget.controller.customer == null
-                        ? ''
-                        : '#${widget.controller.customer!['IdKH']} · ${widget.controller.customer!['SoDienThoai'] ?? ''}'),
-                error: widget.controller.customerError != null,
-              ),
-              _detailLine(
-                widget.controller.customer == null
-                    ? ''
-                    : 'Địa chỉ: ${_address(widget.controller.customer!)}',
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-    optionsViewBuilder: (context, onSelected, options) => Align(
-      alignment: Alignment.topLeft,
-      child: Material(
-        elevation: 6,
-        borderRadius: BorderRadius.circular(10),
-        clipBehavior: Clip.antiAlias,
-        child: SizedBox(
-          width: 310,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 260),
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                for (final row in options)
-                  ListTile(
-                    dense: true,
-                    title: Text('${row['TenKhachHang']}'),
-                    subtitle: Text(
-                      '#${row['IdKH']} · ${row['SoDienThoai'] ?? ''}',
+        optionsViewBuilder: (context, onSelected, options) => Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 6,
+            borderRadius: BorderRadius.circular(10),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260),
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
+                  for (final row in options)
+                    ListTile(
+                      dense: true,
+                      title: Text('${row['TenKhachHang']}'),
+                      subtitle: Text(
+                        '#${row['IdKH']} · ${row['SoDienThoai'] ?? ''}',
+                      ),
+                      onTap: () => onSelected(row),
                     ),
-                    onTap: () => onSelected(row),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
-    ),
+      SizedBox(
+        key: const ValueKey('sales-customer-details'),
+        height: SalesCustomerPicker.footerHeight(context),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _detailLine(
+              widget.controller.customerError ??
+                  (widget.controller.customer == null
+                      ? ''
+                      : '#${widget.controller.customer!['IdKH']} · ${widget.controller.customer!['SoDienThoai'] ?? ''}'),
+              error: widget.controller.customerError != null,
+            ),
+            _detailLine(
+              widget.controller.customer == null
+                  ? ''
+                  : 'Địa chỉ: ${_address(widget.controller.customer!)}',
+            ),
+          ],
+        ),
+      ),
+    ],
   );
   String _address(Map<String, dynamic> customer) {
     final value = customer['DiaChiHienThi'] ?? customer['DiaChiChiTiet'];

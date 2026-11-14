@@ -3,7 +3,12 @@ import '../../core/config/database_config.dart';
 import '../settings/app_update_panel.dart';
 import '../settings/settings_tab.dart';
 import '../settings/cloud_sync_reminder_dialog.dart';
+import '../settings/unsynced_data_toast.dart';
+import 'sync_progress_bar.dart';
+import '../../controllers/database_settings_controller.dart';
+import '../../models/settings/database_settings.dart';
 import '../../services/mongo_backup_schedule.dart';
+import '../../services/unsynced_data_check.dart';
 import '../../services/native_database_settings_repository.dart';
 import '../../models/repositories/opening_debt_repository.dart';
 import '../../models/repositories/reports_repository.dart';
@@ -86,6 +91,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   StreamSubscription<int>? _databaseSubscription;
   int _databaseRevision = DatabaseConfig.revision;
   int _initialSettingsTab = 0;
+  bool _syncing = false;
+  bool _syncFailed = false;
+  String? _syncMessage;
   @override
   void initState() {
     super.initState();
@@ -109,11 +117,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final repository =
         widget.databaseSettingsRepositoryFactory?.call() ??
         NativeDatabaseSettingsRepository();
+    final unsynced = UnsyncedDataCheck(repository).pendingComparison();
     await checkForCloudSyncReminder(
       context,
       repository: repository,
-      onOpenSettings: () {
-        setState(() => _initialSettingsTab = 2);
+      onOpenSettings: (tab) {
+        setState(() => _initialSettingsTab = tab);
         _selectGroup(DashboardGroup.settings);
       },
     );
@@ -123,6 +132,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // A missed backup must not stop the shop from opening.
     }
     if (mounted) await checkForUpdateOnLaunch(context);
+    try {
+      final preview = await unsynced;
+      if (!mounted || preview == null) return;
+      showUnsyncedDataToast(
+        context,
+        onSync: () => unawaited(_syncPending(preview)),
+      );
+    } catch (_) {
+      // A failed hidden comparison must not interrupt the shop.
+    }
+  }
+
+  Future<void> _syncPending(CloudComparison preview) async {
+    if (_syncing) return;
+    setState(() {
+      _syncing = true;
+      _syncFailed = false;
+      _syncMessage = 'Đang đồng bộ dữ liệu…';
+    });
+    final repository =
+        widget.databaseSettingsRepositoryFactory?.call() ??
+        NativeDatabaseSettingsRepository();
+    final controller = DatabaseSettingsController(repository);
+    void listen() {
+      if (!mounted || controller.progress.isEmpty) return;
+      setState(() => _syncMessage = controller.progress.last);
+    }
+
+    controller.addListener(listen);
+    try {
+      await controller.load();
+      controller.stageComparison(preview, upload: true);
+      await controller.syncCloud(
+        upload: true,
+        conflictPolicy: preview.hasConflicts ? 'source' : 'abort',
+      );
+      if (!mounted) return;
+      final error = controller.errorFor(SettingsSection.cloud);
+      setState(() {
+        _syncing = false;
+        _syncFailed = error != null;
+        _syncMessage = error ?? 'Đã đồng bộ dữ liệu với MongoDB Cloud.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _syncing = false;
+        _syncFailed = true;
+        _syncMessage = 'Chưa đồng bộ được. Kiểm tra kết nối và thử lại.';
+      });
+    } finally {
+      controller.removeListener(listen);
+      controller.dispose();
+    }
   }
 
   void _createSalesController() {
@@ -133,11 +196,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           widget.salesRepositoryFactory?.call() ?? MongoSalesRepository(),
     );
     unawaited(_sales.recover());
-  }
-
-  void _openProductTab(int index) {
-    _selectGroup(DashboardGroup.products);
-    _controller.selectTab(index);
   }
 
   final _scaffold = GlobalKey<ScaffoldState>();
@@ -183,52 +241,68 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
           drawer: wide ? null : Drawer(child: sidebar),
-          body: Row(
+          body: Column(
             children: [
-              if (wide) SizedBox(width: 260, child: sidebar),
               Expanded(
-                child: Column(
+                child: Row(
                   children: [
+                    if (wide) SizedBox(width: 260, child: sidebar),
                     Expanded(
-                      child:
-                          _controller.salesActive || _controller.group == null
-                          ? SalesTab(
-                              key: ValueKey(_databaseRevision),
-                              controller: _sales,
-                              onAddProducts: () => _openProductTab(0),
-                              onAddServices: () => _openProductTab(3),
-                            )
-                          : _GroupTabs(
-                              controller: _controller,
-                              initialSettingsTab: _initialSettingsTab,
-                              databaseRevision: _databaseRevision,
-                              inventoryRepositoryFactory:
-                                  widget.inventoryRepositoryFactory,
-                              customerRepositoryFactory:
-                                  widget.customerRepositoryFactory,
-                              partnerRepositoryFactory:
-                                  widget.partnerRepositoryFactory,
-                              serviceRepositoryFactory:
-                                  widget.serviceRepositoryFactory,
-                              directoryRepositoryFactory:
-                                  widget.directoryRepositoryFactory,
-                              batchRepositoryFactory:
-                                  widget.batchRepositoryFactory,
-                              pawnRepositoryFactory:
-                                  widget.pawnRepositoryFactory,
-                              financeRepositoryFactory:
-                                  widget.financeRepositoryFactory,
-                              openingDebtRepositoryFactory:
-                                  widget.openingDebtRepositoryFactory,
-                              reportsRepositoryFactory:
-                                  widget.reportsRepositoryFactory,
-                              databaseSettingsRepositoryFactory:
-                                  widget.databaseSettingsRepositoryFactory,
-                            ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child:
+                                _controller.salesActive ||
+                                    _controller.group == null
+                                ? SalesTab(
+                                    key: ValueKey(_databaseRevision),
+                                    controller: _sales,
+                                    inventoryRepositoryFactory:
+                                        widget.inventoryRepositoryFactory,
+                                    serviceRepositoryFactory:
+                                        widget.serviceRepositoryFactory,
+                                  )
+                                : _GroupTabs(
+                                    controller: _controller,
+                                    initialSettingsTab: _initialSettingsTab,
+                                    databaseRevision: _databaseRevision,
+                                    inventoryRepositoryFactory:
+                                        widget.inventoryRepositoryFactory,
+                                    customerRepositoryFactory:
+                                        widget.customerRepositoryFactory,
+                                    partnerRepositoryFactory:
+                                        widget.partnerRepositoryFactory,
+                                    serviceRepositoryFactory:
+                                        widget.serviceRepositoryFactory,
+                                    directoryRepositoryFactory:
+                                        widget.directoryRepositoryFactory,
+                                    batchRepositoryFactory:
+                                        widget.batchRepositoryFactory,
+                                    pawnRepositoryFactory:
+                                        widget.pawnRepositoryFactory,
+                                    financeRepositoryFactory:
+                                        widget.financeRepositoryFactory,
+                                    openingDebtRepositoryFactory:
+                                        widget.openingDebtRepositoryFactory,
+                                    reportsRepositoryFactory:
+                                        widget.reportsRepositoryFactory,
+                                    databaseSettingsRepositoryFactory: widget
+                                        .databaseSettingsRepositoryFactory,
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
+              if (_syncMessage != null)
+                SyncProgressBar(
+                  active: _syncing,
+                  failed: _syncFailed,
+                  message: _syncMessage!,
+                  onClose: () => setState(() => _syncMessage = null),
+                ),
             ],
           ),
         );

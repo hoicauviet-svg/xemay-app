@@ -7,13 +7,17 @@ class DatabaseSettings {
     this.cloudVersion,
     this.lastSyncAt,
     this.syncReminderStartedAt,
+    this.dailyReminderAt,
     this.backupDirectory = '',
     this.lastBackupAt,
     this.syncHistory = const [],
   });
   final String mongoUri, sqlConnection, cloudUri, backupDirectory;
   final DatabaseVersion? databaseVersion, cloudVersion;
-  final DateTime? lastSyncAt, syncReminderStartedAt, lastBackupAt;
+  final DateTime? lastSyncAt,
+      syncReminderStartedAt,
+      dailyReminderAt,
+      lastBackupAt;
   final List<SyncHistoryEntry> syncHistory;
   DatabaseSettings copyWith({
     String? mongoUri,
@@ -23,6 +27,7 @@ class DatabaseSettings {
     DatabaseVersion? cloudVersion,
     DateTime? lastSyncAt,
     DateTime? syncReminderStartedAt,
+    DateTime? dailyReminderAt,
     String? backupDirectory,
     DateTime? lastBackupAt,
     List<SyncHistoryEntry>? syncHistory,
@@ -37,6 +42,7 @@ class DatabaseSettings {
             ? null
             : this.lastSyncAt),
     syncReminderStartedAt: syncReminderStartedAt ?? this.syncReminderStartedAt,
+    dailyReminderAt: dailyReminderAt ?? this.dailyReminderAt,
     backupDirectory: backupDirectory ?? this.backupDirectory,
     lastBackupAt: lastBackupAt ?? this.lastBackupAt,
     syncHistory: syncHistory ?? this.syncHistory,
@@ -59,6 +65,7 @@ class DatabaseSettings {
     'cloudVersion': cloudVersion?.toJson(),
     'lastSyncAt': lastSyncAt?.toUtc().toIso8601String(),
     'syncReminderStartedAt': syncReminderStartedAt?.toUtc().toIso8601String(),
+    'dailyReminderAt': dailyReminderAt?.toUtc().toIso8601String(),
     'backupDirectory': backupDirectory,
     'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
     'syncHistory': syncHistory.map((entry) => entry.toJson()).toList(),
@@ -163,10 +170,18 @@ class CloudComparison {
     required this.conflicts,
     required this.schemaConflicts,
     required this.identical,
+    this.pendingChanges = 0,
   });
   final DatabaseVersion sourceVersion, targetVersion;
   final int sourceOnly, targetOnly, conflicts, schemaConflicts, identical;
+  final int pendingChanges;
   bool get hasConflicts => conflicts > 0 || schemaConflicts > 0;
+  bool get needsSync =>
+      pendingChanges > 0 ||
+      sourceOnly > 0 ||
+      targetOnly > 0 ||
+      conflicts > 0 ||
+      schemaConflicts > 0;
   factory CloudComparison.fromJson(Map<String, dynamic> json) =>
       CloudComparison(
         sourceVersion: DatabaseVersion.fromJson(
@@ -180,6 +195,7 @@ class CloudComparison {
         conflicts: (json['conflicts'] as num).toInt(),
         schemaConflicts: (json['schemaConflicts'] as num).toInt(),
         identical: (json['identical'] as num).toInt(),
+        pendingChanges: (json['pendingChanges'] as num?)?.toInt() ?? 0,
       );
 }
 

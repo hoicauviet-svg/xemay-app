@@ -59,6 +59,9 @@ class NativeDatabaseSettingsRepository implements DatabaseSettingsRepository {
       syncReminderStartedAt: DateTime.tryParse(
         json['syncReminderStartedAt'] as String? ?? '',
       ),
+      dailyReminderAt: DateTime.tryParse(
+        json['dailyReminderAt'] as String? ?? '',
+      ),
       backupDirectory: json['backupDirectory'] as String? ?? '',
       lastBackupAt: DateTime.tryParse(json['lastBackupAt'] as String? ?? ''),
       syncHistory: (json['syncHistory'] as List? ?? [])

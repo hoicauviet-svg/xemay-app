@@ -48,6 +48,24 @@ void main() {
     },
   );
 
+  test('ĐHTT matches frame numbers stored with Latin eth', () {
+    final pattern = MongoInventoryRepository.searchPattern('\u0110HTT');
+    final expression = RegExp(pattern, caseSensitive: false);
+    expect(expression.hasMatch('\u00D0HTT12'), isTrue);
+    expect(expression.hasMatch('\u0111htt3'), isTrue);
+    expect(expression.hasMatch('DHTT12'), isFalse);
+    expect(
+      (MongoInventoryRepository.filterFor(
+                InventorySection.vehicles,
+                '\u0110HTT',
+                '',
+              )[r'$or']
+              as List)
+          .first['TenXe'][r'$regex'],
+      pattern,
+    );
+  });
+
   testWidgets('Navigation, pagination, search and details use the repository', (
     tester,
   ) async {

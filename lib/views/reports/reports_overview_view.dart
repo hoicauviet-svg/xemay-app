@@ -572,39 +572,24 @@ class ReportsOverviewView extends StatelessWidget {
       return first == null || second == null ? null : first + second;
     }
 
-    final incomeRows = <(String, num?, bool)>[
-      ('Bán hàng', cashflow.income['Bán hàng'], false),
+    final incomeRows = <(String, num?, bool, String?)>[
       (
-        'Xe mới',
-        cashflow.salesByProductGroup[ReportProductGroup.newVehicles],
-        true,
+        'Bán hàng',
+        cashflow.income['Bán hàng'],
+        false,
+        '(Xe mới, Xe cũ, Phụ tùng, Dịch vụ)',
       ),
-      (
-        'Xe cũ',
-        cashflow.salesByProductGroup[ReportProductGroup.usedVehicles],
-        true,
-      ),
-      (
-        'Phụ tùng',
-        cashflow.salesByProductGroup[ReportProductGroup.parts],
-        true,
-      ),
-      (
-        'Dịch vụ',
-        cashflow.salesByProductGroup[ReportProductGroup.services],
-        true,
-      ),
-      ('Cầm đồ', sumPair('Cầm đồ - gốc', 'Cầm đồ - lãi'), false),
-      ('Gốc', cashflow.income['Cầm đồ - gốc'], true),
-      ('Lãi', cashflow.income['Cầm đồ - lãi'], true),
-      ('Thu nợ', sumPair('Thu nợ - gốc', 'Thu nợ - lãi'), false),
-      ('Gốc', cashflow.income['Thu nợ - gốc'], true),
-      ('Lãi', cashflow.income['Thu nợ - lãi'], true),
-      ('Thu khác', cashflow.income['Thu khác'], false),
-      ('Vay vốn', cashflow.income['Vay vốn'], false),
+      ('Cầm đồ', sumPair('Cầm đồ - gốc', 'Cầm đồ - lãi'), false, null),
+      ('Gốc', cashflow.income['Cầm đồ - gốc'], true, null),
+      ('Lãi', cashflow.income['Cầm đồ - lãi'], true, null),
+      ('Thu nợ', sumPair('Thu nợ - gốc', 'Thu nợ - lãi'), false, null),
+      ('Gốc', cashflow.income['Thu nợ - gốc'], true, null),
+      ('Lãi', cashflow.income['Thu nợ - lãi'], true, null),
+      ('Thu khác', cashflow.income['Thu khác'], false, null),
+      ('Vay vốn', cashflow.income['Vay vốn'], false, null),
     ];
     final expenseRows = cashflow.expense.entries
-        .map((entry) => (entry.key, entry.value, false))
+        .map((entry) => (entry.key, entry.value, false, null))
         .toList();
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -719,7 +704,7 @@ class ReportsOverviewView extends StatelessWidget {
 
   Widget _cashPanel(
     String title,
-    List<(String, num?, bool)> amounts,
+    List<(String, num?, bool, String?)> amounts,
     num? total,
     Color accent,
   ) {
@@ -751,18 +736,36 @@ class ReportsOverviewView extends StatelessWidget {
           if (amounts.isEmpty)
             Text('Chưa có khoản $title trong kỳ này.')
           else
-            for (final (label, value, child) in amounts)
+            for (final (label, value, child, note) in amounts)
               Padding(
                 padding: EdgeInsets.fromLTRB(child ? 20 : 0, 4, 0, 4),
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: child ? const Color(0xFF65736B) : null,
-                          fontSize: child ? 13 : null,
-                        ),
+                      child: Row(
+                        children: [
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: child ? const Color(0xFF65736B) : null,
+                              fontSize: child ? 13 : null,
+                            ),
+                          ),
+                          if (note != null) ...[
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                note,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF65736B),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     const SizedBox(width: 12),

@@ -1167,22 +1167,9 @@ class _ReportsViewState extends State<ReportsView>
       block('KẾT QUẢ'),
       amountRow('Lợi nhuận tổng', netProfit),
       block('THU'),
-      amountRow('Bán hàng', cash.income['Bán hàng']),
       amountRow(
-        '  Xe mới',
-        cash.salesByProductGroup[ReportProductGroup.newVehicles],
-      ),
-      amountRow(
-        '  Xe cũ',
-        cash.salesByProductGroup[ReportProductGroup.usedVehicles],
-      ),
-      amountRow(
-        '  Phụ tùng',
-        cash.salesByProductGroup[ReportProductGroup.parts],
-      ),
-      amountRow(
-        '  Dịch vụ',
-        cash.salesByProductGroup[ReportProductGroup.services],
+        'Bán hàng (Xe mới, Xe cũ, Phụ tùng, Dịch vụ)',
+        cash.income['Bán hàng'],
       ),
       amountRow('Lãi cầm đồ', cash.income['Cầm đồ - lãi']),
       amountRow('Gốc cầm đồ', cash.income['Cầm đồ - gốc']),

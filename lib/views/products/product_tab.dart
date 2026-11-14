@@ -266,12 +266,12 @@ class _ProductTabState extends State<ProductTab>
                   separatorBuilder: (_, _) => const Divider(height: 24),
                   itemBuilder: (context, index) {
                     final row = rows[index];
-                    return InkWell(
-                      onTap: () => _openProduct(row),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => _openProduct(row),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -299,9 +299,9 @@ class _ProductTabState extends State<ProductTab>
                               ],
                             ),
                           ),
-                          _cartCell(row, vehicle).child,
-                        ],
-                      ),
+                        ),
+                        _cartButton(row, vehicle),
+                      ],
                     );
                   },
                 ),
@@ -449,35 +449,51 @@ class _ProductTabState extends State<ProductTab>
     ],
   );
 
-  DataCell _cartCell(Map<String, dynamic> row, bool vehicle) {
-    final inStock = row['SoLuongTon'] is num && row['SoLuongTon'] > 0;
-    return DataCell(
-      onTap: () {},
-      IconButton(
-        tooltip: 'Thêm vào đơn bán hàng',
-        iconSize: 18,
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-        icon: const Icon(Icons.add_shopping_cart),
-        onPressed: inStock
-            ? () {
-                final added = CartController.shared.add(row, vehicle: vehicle);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      added
-                          ? 'Đã thêm vào đơn bán hàng'
-                          : 'Sản phẩm đã có trong đơn hoặc đã đủ số lượng tồn',
-                    ),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              }
-            : null,
+  bool _inStock(Map<String, dynamic> row) =>
+      row['SoLuongTon'] is num && row['SoLuongTon'] > 0;
+
+  void _addToCart(Map<String, dynamic> row, bool vehicle) {
+    final added = CartController.shared.add(row, vehicle: vehicle);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          added
+              ? 'Đã thêm vào đơn bán hàng'
+              : 'Sản phẩm đã có trong đơn hoặc đã đủ số lượng tồn',
+        ),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
+
+  Widget _cartButton(Map<String, dynamic> row, bool vehicle) {
+    final inStock = _inStock(row);
+    return IconButton(
+      tooltip: 'Thêm vào đơn bán hàng',
+      iconSize: 18,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+      icon: const Icon(Icons.add_shopping_cart),
+      onPressed: inStock ? () => _addToCart(row, vehicle) : null,
+    );
+  }
+
+  DataCell _cartCell(Map<String, dynamic> row, bool vehicle) {
+    final inStock = _inStock(row);
+    return DataCell(
+      Tooltip(
+        message: 'Thêm vào đơn bán hàng',
+        child: Icon(
+          Icons.add_shopping_cart,
+          size: 18,
+          color: inStock ? const Color(0xFF176455) : const Color(0xFFB7C2C6),
+        ),
+      ),
+      onTap: inStock ? () => _addToCart(row, vehicle) : () {},
+    );
+  }
+
   String _value(dynamic value) =>
       value == null || value.toString().trim().isEmpty ? '—' : value.toString();
 }

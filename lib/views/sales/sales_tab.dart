@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../controllers/cart_controller.dart';
+import '../../models/repositories/inventory_repository.dart';
+import '../../models/repositories/service_repository.dart';
+import '../../models/services/service_models.dart';
+import '../../services/mongo_inventory_repository.dart';
+import '../../services/mongo_service_repository.dart';
 import '../../controllers/sales_controller.dart';
 import '../../models/printing/sales_invoice_data.dart';
 import '../../core/formatters/inventory_formatters.dart';
+import '../../core/formatters/money_input_formatter.dart';
+import 'product_name_field.dart';
+import 'service_name_field.dart';
 import 'sales_order_preview_popup.dart';
 import '../widgets/form_section.dart';
 import '../customers/customer_editor_popup.dart';
@@ -13,11 +21,12 @@ class SalesTab extends StatefulWidget {
   const SalesTab({
     super.key,
     required this.controller,
-    required this.onAddProducts,
-    required this.onAddServices,
+    this.inventoryRepositoryFactory,
+    this.serviceRepositoryFactory,
   });
   final SalesController controller;
-  final VoidCallback onAddProducts, onAddServices;
+  final InventoryRepository Function()? inventoryRepositoryFactory;
+  final ServiceRepository Function()? serviceRepositoryFactory;
   @override
   State<SalesTab> createState() => _SalesTabState();
 }
@@ -25,15 +34,81 @@ class SalesTab extends StatefulWidget {
 class _SalesTabState extends State<SalesTab> {
   final _form = GlobalKey<FormState>();
   final _paymentFieldsScroll = ScrollController();
+  final _productRows = <_ProductRow>[_ProductRow.blank()];
+  final _serviceRows = <_ServiceRow>[_ServiceRow.blank()];
+  InventoryRepository? _inventory;
+  ServiceRepository? _services;
+  InventoryRepository get _inventoryRepo => _inventory ??=
+      widget.inventoryRepositoryFactory?.call() ?? MongoInventoryRepository();
+  ServiceRepository get _serviceRepo => _services ??=
+      widget.serviceRepositoryFactory?.call() ?? MongoServiceRepository();
+
+  @override
+  void initState() {
+    super.initState();
+    final products = [
+      for (final item in sale.cart.items.where((item) => !item.service))
+        _ProductRow.linked(item),
+    ];
+    if (products.isNotEmpty) _productRows.addAll(products);
+    final linked = [
+      for (final item in sale.cart.items.where((item) => item.service))
+        _ServiceRow.linked(item),
+    ];
+    if (linked.isNotEmpty) _serviceRows.addAll(linked);
+  }
+
   @override
   void dispose() {
     _paymentFieldsScroll.dispose();
+    for (final row in _productRows) {
+      row.dispose();
+    }
+    for (final row in _serviceRows) {
+      row.dispose();
+    }
+    final inventory = _inventory;
+    final services = _services;
+    _inventory = null;
+    _services = null;
+    inventory?.close();
+    services?.close();
     super.dispose();
   }
 
   SalesController get sale => widget.controller;
   static const _green = Color(0xFF176455);
+  static const _fieldHeight = 40.0;
   String _amount(int? value) => value == null ? '—' : money(value);
+  Widget _moneyField({
+    required Key key,
+    required String label,
+    required String hint,
+    required String digits,
+    required ValueChanged<String> onChanged,
+    required String? Function(String?) validator,
+    bool enabled = true,
+    TextStyle? style,
+  }) => TextFormField(
+    key: key,
+    enabled: enabled,
+    style: style,
+    initialValue: groupMoney(digits),
+    keyboardType: TextInputType.number,
+    inputFormatters: const [MoneyInputFormatter()],
+    decoration: InputDecoration(
+      labelText: label.isEmpty ? null : label,
+      floatingLabelBehavior: label.isEmpty ? FloatingLabelBehavior.never : null,
+      isDense: label.isEmpty,
+      contentPadding: label.isEmpty
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 14)
+          : null,
+      suffixText: 'đ',
+      hintText: hint,
+    ),
+    onChanged: (value) => onChanged(ungroupMoney(value)),
+    validator: validator,
+  );
   Future<void> _chooseDate() async {
     final value = await showDatePicker(
       context: context,
@@ -99,6 +174,21 @@ class _SalesTabState extends State<SalesTab> {
   }
 
   Future<void> _save() async {
+    final productError = _unselectedProductError();
+    if (productError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(productError)));
+      return;
+    }
+    final serviceError = await _commitNewServices();
+    if (!mounted) return;
+    if (serviceError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(serviceError)));
+      return;
+    }
     if (!sale.awaitingConfirmation && !_form.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     SalesInvoiceData? printable;
@@ -111,6 +201,7 @@ class _SalesTabState extends State<SalesTab> {
     }
     final result = await sale.save();
     if (result == null || !mounted) return;
+    setState(_resetEntryRows);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Đã lưu đơn hàng #${result.invoiceId}')),
     );
@@ -130,39 +221,6 @@ class _SalesTabState extends State<SalesTab> {
       barrierDismissible: false,
       builder: (_) => SalesOrderPreviewPopup(data: data),
     );
-  }
-
-  final _addKey = GlobalKey();
-  Future<void> _showAddMenu() async {
-    final button = _addKey.currentContext!.findRenderObject() as RenderBox;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final origin = button.localToGlobal(Offset.zero, ancestor: overlay);
-    final selected = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        origin & button.size,
-        Offset.zero & overlay.size,
-      ),
-      items: const [
-        PopupMenuItem(
-          value: 'product',
-          child: ListTile(
-            leading: Icon(Icons.inventory_2_outlined),
-            title: Text('Thêm sản phẩm'),
-          ),
-        ),
-        PopupMenuItem(
-          value: 'service',
-          child: ListTile(
-            leading: Icon(Icons.build_outlined),
-            title: Text('Thêm dịch vụ'),
-          ),
-        ),
-      ],
-    );
-    if (!mounted) return;
-    if (selected == 'product') widget.onAddProducts();
-    if (selected == 'service') widget.onAddServices();
   }
 
   @override
@@ -224,8 +282,8 @@ class _SalesTabState extends State<SalesTab> {
                           const SizedBox(height: 12),
                           SizedBox(
                             height: bounds.maxHeight < 500
-                                ? 300
-                                : bounds.maxHeight * .48,
+                                ? 360
+                                : bounds.maxHeight * .72,
                             child: AbsorbPointer(
                               absorbing: sale.editingLocked,
                               child: _productList(),
@@ -346,455 +404,626 @@ class _SalesTabState extends State<SalesTab> {
       border: Border.all(color: const Color(0xFFE5EAED)),
     ),
     clipBehavior: Clip.antiAlias,
-    child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: LayoutBuilder(
-            builder: (context, bounds) {
-              final title = Text(
-                'Sản phẩm & dịch vụ (${sale.cart.items.length})',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              );
-              final add = Tooltip(
-                message: 'Thêm sản phẩm / dịch vụ',
-                child: FilledButton.icon(
-                  key: _addKey,
-                  onPressed: _showAddMenu,
-                  icon: const Icon(Icons.add, size: 24),
-                  label: const Text(
-                    'Thêm sản phẩm / dịch vụ',
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                  ),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 48),
-                    backgroundColor: _green,
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
-              );
-              return bounds.maxWidth >= 600
-                  ? Row(
-                      children: [
-                        Expanded(child: title),
-                        const SizedBox(width: 12),
-                        add,
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        title,
-                        const SizedBox(height: 10),
-                        SizedBox(width: double.infinity, child: add),
-                      ],
-                    );
-            },
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: Padding(padding: const EdgeInsets.all(12), child: _lines()),
-        ),
-      ],
-    ),
+    padding: const EdgeInsets.all(12),
+    child: _lines(),
   );
 
   Widget _lines({bool shrinkWrap = false}) {
-    if (sale.cart.items.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE5EAED)),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.shopping_bag_outlined,
-                  size: 48,
-                  color: Color(0xFF93A6A0),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  'Chưa chọn sản phẩm bán hàng',
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Thêm xe, phụ tùng hoặc dịch vụ để lập đơn.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Color(0xFF6E7D83)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-    return ListView.separated(
+    return ListView(
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       padding: EdgeInsets.zero,
-      itemCount: sale.cart.items.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) => _line(sale.cart.items[index]),
+      children: [
+        _orderTable(
+          service: false,
+          rows: [for (final row in _productRows) _productCells(row)],
+          rowKey: (index) {
+            final row = _productRows[index];
+            final linked = _linkedProduct(row);
+            return ValueKey('sales-line-${linked?.key ?? row.lineKey}');
+          },
+          headerAction: _addLineButton(
+            tooltip: 'Thêm dòng sản phẩm',
+            onPressed: sale.editingLocked
+                ? null
+                : () => setState(() => _productRows.add(_ProductRow.newLine())),
+          ),
+        ),
+        _orderTable(
+          service: true,
+          rows: [for (final row in _serviceRows) _serviceCells(row)],
+          rowKey: (index) =>
+              ValueKey('sales-line-${_serviceRows[index].lineKey}'),
+          headerAction: _addLineButton(
+            tooltip: 'Thêm dòng dịch vụ',
+            onPressed: sale.editingLocked
+                ? null
+                : () => setState(() => _serviceRows.add(_ServiceRow.newLine())),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _line(CartItem item) => LayoutBuilder(
-    builder: (context, bounds) =>
-        bounds.maxWidth >= 850 ? _compactLine(item) : _stackedLine(item),
-  );
-
-  Widget _compactLine(CartItem item) => Container(
-    key: ValueKey('sales-line-${item.key}'),
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xFFE5EAED)),
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                item.service
-                    ? 'Dịch vụ'
-                    : item.vehicle
-                    ? 'Xe · #${item.product['IdXe']}'
-                    : 'Phụ tùng · #${item.product['IdSanPham']}',
-                style: const TextStyle(fontSize: 11, color: Color(0xFF6E7D83)),
-              ),
-              if (item.vehicle) ...[
-                const SizedBox(height: 4),
-                for (final entry in {
-                  'Số khung': item.product['SoKhung'],
-                  'Số máy': item.product['SoMay'],
-                  'Biển số': item.product['BienSo'],
-                  'Màu sơn': item.product['MauSon'],
-                }.entries)
-                  Tooltip(
-                    message: '${entry.key}: ${entry.value ?? '—'}',
-                    child: Text(
-                      '${entry.key}: ${entry.value == null || entry.value.toString().trim().isEmpty ? '—' : entry.value}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF6E7D83),
-                      ),
-                    ),
-                  ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 125,
-          child: InputDecorator(
-            decoration: const InputDecoration(
-              labelText: 'Số lượng',
-              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  tooltip: 'Giảm số lượng ${item.name}',
-                  onPressed: !item.vehicle && item.quantity > 1
-                      ? () => sale.cart.setQuantity(item, item.quantity - 1)
-                      : null,
-                  icon: const Icon(Icons.remove, size: 16),
-                  constraints: const BoxConstraints.tightFor(
-                    width: 30,
-                    height: 30,
-                  ),
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size.square(30),
-                    minimumSize: const Size.square(30),
-                    maximumSize: const Size.square(30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.standard,
-                  ),
-                  padding: EdgeInsets.zero,
-                ),
-                Text('${item.quantity}'),
-                IconButton(
-                  tooltip: 'Tăng số lượng ${item.name}',
-                  onPressed:
-                      !item.vehicle &&
-                          (item.service ||
-                              item.quantity <
-                                  (item.product['SoLuongTon'] as num))
-                      ? () => sale.cart.setQuantity(item, item.quantity + 1)
-                      : null,
-                  icon: const Icon(Icons.add, size: 16),
-                  constraints: const BoxConstraints.tightFor(
-                    width: 30,
-                    height: 30,
-                  ),
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size.square(30),
-                    minimumSize: const Size.square(30),
-                    maximumSize: const Size.square(30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.standard,
-                  ),
-                  padding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 170,
-          child: TextFormField(
-            key: ValueKey('sales-price-${item.key}'),
-            initialValue: item.priceText,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Đơn giá',
-              suffixText: 'đ',
-              hintText: 'Nhập giá bán',
-            ),
-            onChanged: (v) => sale.cart.setPrice(item, v),
-            validator: (_) => item.unitPrice == null || item.unitPrice! < 0
-                ? 'Nhập giá bán từ 0 đồng'
-                : null,
-          ),
-        ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 145,
-          child: _paymentAmount('Thành tiền', _amount(item.total)),
-        ),
-        IconButton(
-          tooltip: 'Bỏ khỏi đơn',
-          onPressed: () => sale.cart.remove(item),
-          icon: const Icon(
-            Icons.delete_outline,
-            size: 20,
-            color: Color(0xFFB44141),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _stackedLine(CartItem item) => Container(
-    key: ValueKey('sales-line-${item.key}'),
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFE5EAED)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
+  Widget _orderTable({
+    required bool service,
+    required List<List<Widget>> rows,
+    required Key? Function(int index) rowKey,
+    Widget? headerAction,
+  }) {
+    final columns = service
+        ? const [
+            _SaleColumn('Dịch vụ', flex: 24),
+            _SaleColumn('Số lượng', flex: 11),
+            _SaleColumn('Đơn giá', flex: 18),
+            _SaleColumn('Thành tiền', flex: 12),
+            _SaleColumn('', flex: 6),
+          ]
+        : const [
+            _SaleColumn('Sản phẩm', flex: 18),
+            _SaleColumn('Số khung', flex: 14),
+            _SaleColumn('Số máy', flex: 14),
+            _SaleColumn('Biển số', flex: 10),
+            _SaleColumn('Màu', flex: 8),
+            _SaleColumn('Số lượng', flex: 11),
+            _SaleColumn('Đơn giá', flex: 18),
+            _SaleColumn('Thành tiền', flex: 12),
+            _SaleColumn('', flex: 6),
+          ];
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        const gap = 8.0;
+        const pad = 16.0;
+        const actionWidth = 44.0;
+        final flex = columns.fold<int>(0, (sum, column) => sum + column.flex);
+        final gaps = gap * (columns.length - 1);
+        final content = (bounds.maxWidth - pad - gaps).clamp(
+          0.0,
+          double.infinity,
+        );
+        final action = actionWidth < content ? actionWidth : content;
+        final restFlex = flex - columns.last.flex;
+        final rest = content - action;
+        final widths = [
+          for (var i = 0; i < columns.length; i++)
+            i == columns.length - 1
+                ? action
+                : rest * columns[i].flex / restFlex,
+        ];
+        Widget line(List<Widget> cells, {bool header = false, Key? rowKey}) =>
             Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF3EF),
-                borderRadius: BorderRadius.circular(10),
+              key: rowKey,
+              color: header ? const Color(0xFFF8FAFB) : null,
+              padding: EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: header ? 10 : 6,
               ),
-              child: Icon(
-                item.service
-                    ? Icons.build_outlined
-                    : item.vehicle
-                    ? Icons.two_wheeler
-                    : Icons.settings_outlined,
-                color: _green,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(
-                    item.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                  Text(
-                    item.service
-                        ? 'Dịch vụ'
-                        : item.vehicle
-                        ? 'Xe · #${item.product['IdXe']}'
-                        : 'Phụ tùng · #${item.product['IdSanPham']}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6E7D83),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: 'Bỏ khỏi đơn',
-              onPressed: () => sale.cart.remove(item),
-              icon: const Icon(Icons.delete_outline, color: Color(0xFFB44141)),
-            ),
-          ],
-        ),
-        if (item.vehicle)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Wrap(
-              spacing: 16,
-              runSpacing: 4,
-              children: [
-                for (final e in {
-                  'Số khung': item.product['SoKhung'],
-                  'Số máy': item.product['SoMay'],
-                  'Biển số': item.product['BienSo'],
-                  'Màu sơn': item.product['MauSon'],
-                }.entries)
-                  Text(
-                    '${e.key}: ${e.value == null || e.value.toString().trim().isEmpty ? '—' : e.value}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFF6E7D83),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 140,
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Số lượng',
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 6,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      tooltip: 'Giảm số lượng ${item.name}',
-                      onPressed: !item.vehicle && item.quantity > 1
-                          ? () => sale.cart.setQuantity(item, item.quantity - 1)
-                          : null,
-                      icon: const Icon(Icons.remove, size: 18),
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
-                      ),
-                      padding: EdgeInsets.zero,
-                    ),
-                    Text('${item.quantity}'),
-                    IconButton(
-                      tooltip: 'Tăng số lượng ${item.name}',
-                      onPressed:
-                          !item.vehicle &&
-                              (item.service ||
-                                  item.quantity <
-                                      (item.product['SoLuongTon'] as num))
-                          ? () => sale.cart.setQuantity(item, item.quantity + 1)
-                          : null,
-                      icon: const Icon(Icons.add, size: 18),
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
-                      ),
-                      padding: EdgeInsets.zero,
+                  for (var i = 0; i < cells.length; i++) ...[
+                    if (i > 0) const SizedBox(width: gap),
+                    SizedBox(
+                      width: widths[i],
+                      child: i == cells.length - 1
+                          ? Align(
+                              alignment: Alignment.center,
+                              child: cells[i],
+                            )
+                          : cells[i],
                     ),
                   ],
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 180,
-              child: TextFormField(
-                key: ValueKey('sales-price-${item.key}'),
-                initialValue: item.priceText,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Đơn giá',
-                  suffixText: 'đ',
-                  hintText: 'Nhập giá bán',
-                ),
-                onChanged: (v) => sale.cart.setPrice(item, v),
-                validator: (_) => item.unitPrice == null || item.unitPrice! < 0
-                    ? 'Nhập giá bán từ 0 đồng'
-                    : null,
-              ),
-            ),
-            SizedBox(
-              width: 160,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Thành tiền',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF6E7D83)),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _amount(item.total),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _green,
-                    ),
-                  ),
                 ],
               ),
+            );
+        return Column(
+          children: [
+            line([
+              for (var i = 0; i < columns.length; i++)
+                i == columns.length - 1 && headerAction != null
+                    ? headerAction
+                    : _header(columns[i].title),
+            ], header: true),
+            const Divider(height: 1),
+            for (var i = 0; i < rows.length; i++) ...[
+              line(rows[i], rowKey: rowKey(i)),
+              const Divider(height: 1),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _addLineButton({
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    icon: const Icon(Icons.add, size: 22),
+    style: IconButton.styleFrom(
+      backgroundColor: _green,
+      foregroundColor: Colors.white,
+      disabledBackgroundColor: const Color(0xFFD5E3DF),
+      disabledForegroundColor: Colors.white,
+      fixedSize: const Size.square(36),
+      minimumSize: const Size.square(36),
+      maximumSize: const Size.square(36),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: const CircleBorder(),
+    ),
+  );
+
+  Widget _header(String title) => Text(
+    title,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: const TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: Color(0xFF56656D),
+    ),
+  );
+
+  String _cellText(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? '—' : text;
+  }
+
+  CartItem? _linkedProduct(_ProductRow row) {
+    final key = row.productKey;
+    if (key == null) return null;
+    for (final item in sale.cart.items) {
+      if (!item.service && item.key == key) return item;
+    }
+    return null;
+  }
+
+  void _selectProduct(_ProductRow row, ProductSuggestion pick) {
+    if (_productRows.any(
+      (other) => other != row && other.productKey == pick.cartKey,
+    )) {
+      row.name.text = row.acceptedName;
+      _showProductMessage('Sản phẩm đã có trong đơn hoặc đã đủ số lượng tồn');
+      setState(() {});
+      return;
+    }
+    final previous = _linkedProduct(row);
+    if (previous != null && previous.key != pick.cartKey) {
+      sale.cart.remove(previous);
+    }
+    final linked = _linkedProduct(row);
+    final added =
+        linked != null ||
+        sale.cart.add(
+          Map<String, dynamic>.from(pick.row),
+          vehicle: pick.vehicle,
+        );
+    if (!added) {
+      row.name.text = row.acceptedName;
+      _showProductMessage('Sản phẩm đã có trong đơn hoặc đã đủ số lượng tồn');
+      setState(() {});
+      return;
+    }
+    row.productKey = pick.cartKey;
+    row.vehicle = pick.vehicle;
+    row.acceptedName = pick.name;
+    final current = _linkedProduct(row);
+    if (current != null && current.priceText.trim().isEmpty) {
+      final raw = current.vehicle
+          ? pick.row['GiaBan']
+          : pick.row['GiaBanThamKhao'];
+      if (raw is num && raw >= 0 && raw == raw.roundToDouble()) {
+        sale.cart.setPrice(current, raw.toInt().toString());
+      }
+    }
+    setState(() {});
+  }
+
+  void _productNameChanged(_ProductRow row, String value) {
+    if (row.productKey != null && value.trim() != row.acceptedName) {
+      final linked = _linkedProduct(row);
+      if (linked != null) sale.cart.remove(linked);
+      row.productKey = null;
+      row.acceptedName = '';
+    }
+    setState(() {});
+  }
+
+  void _removeProductRow(_ProductRow row) {
+    final linked = _linkedProduct(row);
+    if (linked != null) sale.cart.remove(linked);
+    row.dispose();
+    _productRows.remove(row);
+    if (_productRows.isEmpty) _productRows.add(_ProductRow.blank());
+    setState(() {});
+  }
+
+  void _showProductMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String? _unselectedProductError() {
+    for (final row in _productRows) {
+      final typed = row.name.text.trim();
+      if (typed.isEmpty) continue;
+      final linked = _linkedProduct(row);
+      if (linked == null || typed != linked.name) {
+        return 'Chọn sản phẩm từ gợi ý.';
+      }
+    }
+    return null;
+  }
+
+  bool get _hasTypedProduct =>
+      _productRows.any((row) => row.name.text.trim().isNotEmpty);
+
+  void _resetProductRows() {
+    for (final row in _productRows) {
+      row.dispose();
+    }
+    _productRows
+      ..clear()
+      ..add(_ProductRow.blank());
+  }
+
+  void _resetEntryRows() {
+    _resetProductRows();
+    _resetServiceRows();
+  }
+
+  List<Widget> _productCells(_ProductRow row) {
+    final linked = _linkedProduct(row);
+    Widget plain(Object? value) => Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        _cellText(linked == null ? null : value),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 13),
+      ),
+    );
+    final source = linked?.product;
+    return [
+      ProductNameField(
+        controller: row.name,
+        repository: _inventoryRepo,
+        fieldKey: row.lineKey,
+        onChanged: (value) => _productNameChanged(row, value),
+        onSelected: (item) => _selectProduct(row, item),
+      ),
+      plain(source?['SoKhung']),
+      plain(source?['SoMay']),
+      plain(source?['BienSo']),
+      plain(source?['MauSon']),
+      linked == null
+          ? const Text('—', style: TextStyle(fontSize: 13))
+          : _quantityBox(linked),
+      SizedBox(
+        height: _fieldHeight,
+        width: double.infinity,
+        child: _moneyField(
+          key: ValueKey('sales-price-${linked?.key ?? row.lineKey}'),
+          enabled: linked != null && !sale.editingLocked,
+          label: '',
+          hint: '0',
+          digits: linked?.priceText ?? '',
+          onChanged: (value) {
+            final current = _linkedProduct(row);
+            if (current != null) sale.cart.setPrice(current, value);
+          },
+          validator: (_) {
+            final current = _linkedProduct(row);
+            if (current == null) return null;
+            return current.unitPrice == null || current.unitPrice! < 0
+                ? 'Nhập giá bán từ 0 đồng'
+                : null;
+          },
+        ),
+      ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          _amount(linked?.total),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      IconButton(
+        tooltip: 'Bỏ khỏi đơn',
+        onPressed: sale.editingLocked ? null : () => _removeProductRow(row),
+        icon: const Icon(
+          Icons.delete_outline,
+          size: 18,
+          color: Color(0xFFB44141),
+        ),
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(),
+      ),
+    ];
+  }
+
+  Widget _quantityBox(CartItem item) => SizedBox(
+    key: ValueKey('sales-qty-${item.key}'),
+    height: _fieldHeight,
+    width: double.infinity,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE0E7E9)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _quantityButton(
+              tooltip: 'Giảm số lượng ${item.name}',
+              icon: Icons.remove,
+              onPressed: !item.vehicle && item.quantity > 1
+                  ? () => sale.cart.setQuantity(item, item.quantity - 1)
+                  : null,
+            ),
+            SizedBox(width: 22, child: Center(child: Text('${item.quantity}'))),
+            _quantityButton(
+              tooltip: 'Tăng số lượng ${item.name}',
+              icon: Icons.add,
+              onPressed:
+                  !item.vehicle &&
+                      (item.service ||
+                          item.quantity < (item.product['SoLuongTon'] as num))
+                  ? () => sale.cart.setQuantity(item, item.quantity + 1)
+                  : null,
             ),
           ],
         ),
-      ],
+      ),
     ),
   );
+
+  CartItem? _linkedService(_ServiceRow row) {
+    final id = row.serviceId;
+    if (id == null) return null;
+    for (final item in sale.cart.items) {
+      if (item.service && item.product['_id']?.toString() == id) return item;
+    }
+    return null;
+  }
+
+  void _selectService(_ServiceRow row, ServiceItem item) {
+    final previous = _linkedService(row);
+    if (previous != null && previous.product['_id']?.toString() != item.id) {
+      sale.cart.remove(previous);
+    }
+    row.serviceId = item.id;
+    row.priceText = item.price.toString();
+    row.priceEpoch++;
+    final linked = _linkedService(row);
+    if (linked == null) {
+      sale.cart.addService(item);
+    }
+    final current = _linkedService(row);
+    if (current != null && current.priceText != row.priceText) {
+      sale.cart.setPrice(current, row.priceText);
+    }
+    if (current != null && current.quantity != row.quantity) {
+      sale.cart.setQuantity(current, row.quantity);
+    }
+    setState(() {});
+  }
+
+  void _serviceNameChanged(_ServiceRow row, String value) {
+    final linked = _linkedService(row);
+    if (linked != null && value.trim() != linked.name) {
+      sale.cart.remove(linked);
+      row.serviceId = null;
+    }
+    setState(() {});
+  }
+
+  void _setServiceQuantity(_ServiceRow row, int quantity) {
+    if (quantity < 1) return;
+    row.quantity = quantity;
+    final linked = _linkedService(row);
+    if (linked != null) {
+      sale.cart.setQuantity(linked, quantity);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _removeServiceRow(_ServiceRow row) {
+    final linked = _linkedService(row);
+    if (linked != null) sale.cart.remove(linked);
+    row.dispose();
+    _serviceRows.remove(row);
+    if (_serviceRows.isEmpty) _serviceRows.add(_ServiceRow.blank());
+    setState(() {});
+  }
+
+  void _resetServiceRows() {
+    for (final row in _serviceRows) {
+      row.dispose();
+    }
+    _serviceRows
+      ..clear()
+      ..add(_ServiceRow.blank());
+  }
+
+  bool get _hasNamedService =>
+      _serviceRows.any((row) => row.name.text.trim().isNotEmpty);
+
+  Future<String?> _commitNewServices() async {
+    for (final row in _serviceRows) {
+      final name = row.name.text.trim();
+      if (name.isEmpty || row.serviceId != null) continue;
+      final digits = ungroupMoney(row.priceText);
+      if (!RegExp(r'^\d+$').hasMatch(digits)) {
+        return 'Nhập giá cho dịch vụ $name trước khi lưu.';
+      }
+      try {
+        final created = await _serviceRepo.create(
+          ServiceDraft()
+            ..name = name
+            ..price = digits
+            ..cost = '0',
+        );
+        if (!sale.cart.addService(created)) {
+          return 'Không thêm được dịch vụ $name vào đơn.';
+        }
+        row.serviceId = created.id;
+        final item = _linkedService(row);
+        if (item != null && item.priceText != digits) {
+          sale.cart.setPrice(item, digits);
+        }
+        if (item != null && item.quantity != row.quantity) {
+          sale.cart.setQuantity(item, row.quantity);
+        }
+      } on ServiceException catch (error) {
+        return error.message;
+      } catch (_) {
+        return 'Chưa thêm được dịch vụ $name. Kiểm tra dữ liệu trên máy.';
+      }
+    }
+    return null;
+  }
+
+  List<Widget> _serviceCells(_ServiceRow row) {
+    final linked = _linkedService(row);
+    final quantity = linked?.quantity ?? row.quantity;
+    final priceText = linked?.priceText ?? row.priceText;
+    final total = linked?.total;
+    final parsed = RegExp(r'^\d+$').hasMatch(ungroupMoney(priceText))
+        ? int.tryParse(ungroupMoney(priceText))
+        : null;
+    return [
+      ServiceNameField(
+        controller: row.name,
+        repository: _serviceRepo,
+        fieldKey: row.lineKey,
+        onChanged: (value) => _serviceNameChanged(row, value),
+        onSelected: (item) => _selectService(row, item),
+      ),
+      _quantityEditor(
+        key: ValueKey('sales-qty-${row.lineKey}'),
+        name: row.name.text,
+        quantity: quantity,
+        canDecrease: quantity > 1,
+        canIncrease: true,
+        onDecrease: () => _setServiceQuantity(row, quantity - 1),
+        onIncrease: () => _setServiceQuantity(row, quantity + 1),
+      ),
+      SizedBox(
+        height: _fieldHeight,
+        width: double.infinity,
+        child: _moneyField(
+          key: ValueKey('sales-price-${row.lineKey}-${row.priceEpoch}'),
+          label: '',
+          hint: '0',
+          digits: priceText,
+          onChanged: (value) {
+            row.priceText = value;
+            final current = _linkedService(row);
+            if (current != null) sale.cart.setPrice(current, value);
+          },
+          validator: (_) {
+            if (row.name.text.trim().isEmpty) return null;
+            final digits = ungroupMoney(row.priceText);
+            return RegExp(r'^\d+$').hasMatch(digits)
+                ? null
+                : 'Nhập giá bán từ 0 đồng';
+          },
+        ),
+      ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          _amount(total ?? (parsed == null ? null : parsed * quantity)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      IconButton(
+        tooltip: 'Bỏ khỏi đơn',
+        onPressed: sale.editingLocked ? null : () => _removeServiceRow(row),
+        icon: const Icon(
+          Icons.delete_outline,
+          size: 18,
+          color: Color(0xFFB44141),
+        ),
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        constraints: const BoxConstraints(),
+      ),
+    ];
+  }
+
+  Widget _quantityEditor({
+    required Key key,
+    required String name,
+    required int quantity,
+    required bool canDecrease,
+    required bool canIncrease,
+    required VoidCallback onDecrease,
+    required VoidCallback onIncrease,
+  }) => SizedBox(
+    key: key,
+    height: _fieldHeight,
+    width: double.infinity,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE0E7E9)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _quantityButton(
+              tooltip: 'Giảm số lượng $name',
+              icon: Icons.remove,
+              onPressed: canDecrease ? onDecrease : null,
+            ),
+            SizedBox(width: 22, child: Center(child: Text('$quantity'))),
+            _quantityButton(
+              tooltip: 'Tăng số lượng $name',
+              icon: Icons.add,
+              onPressed: canIncrease ? onIncrease : null,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _quantityButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    icon: Icon(icon, size: 16),
+    constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+    style: IconButton.styleFrom(
+      fixedSize: const Size.square(28),
+      minimumSize: const Size.square(28),
+      maximumSize: const Size.square(28),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    ),
+    padding: EdgeInsets.zero,
+  );
+
   Widget _payment() => FormSection(
     key: const ValueKey('sales-payment'),
     title: null,
@@ -802,31 +1031,23 @@ class _SalesTabState extends State<SalesTab> {
       LayoutBuilder(
         builder: (context, bounds) {
           final fields = <Widget>[
-            TextFormField(
+            _moneyField(
               key: ValueKey('sales-discount-${sale.revision}'),
               enabled: !sale.editingLocked,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-              initialValue: sale.discountText,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Giảm giá',
-                suffixText: 'đ',
-                hintText: '0',
-              ),
+              label: 'Giảm giá',
+              hint: '0',
+              digits: sale.discountText,
               onChanged: sale.setDiscount,
               validator: (_) => sale.discountError,
             ),
-            TextFormField(
+            _moneyField(
               key: ValueKey('sales-paid-${sale.revision}'),
               enabled: !sale.editingLocked,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-              initialValue: sale.paidText,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Khách thanh toán',
-                suffixText: 'đ',
-                hintText: '0',
-              ),
+              label: 'Khách thanh toán',
+              hint: '0',
+              digits: sale.paidText,
               onChanged: sale.setPaid,
               validator: (_) => sale.paidError,
             ),
@@ -899,7 +1120,9 @@ class _SalesTabState extends State<SalesTab> {
                 child: FilledButton.icon(
                   onPressed:
                       sale.saving ||
-                          sale.cart.items.isEmpty ||
+                          (sale.cart.items.isEmpty &&
+                              !_hasNamedService &&
+                              !_hasTypedProduct) ||
                           sale.salesRepository == null
                       ? null
                       : _save,
@@ -989,4 +1212,48 @@ class _SalesTabState extends State<SalesTab> {
           ),
         ],
       );
+}
+
+class _SaleColumn {
+  const _SaleColumn(this.title, {required this.flex});
+  final String title;
+  final int flex;
+}
+
+class _ProductRow {
+  _ProductRow.blank() : lineKey = 'product-default';
+  _ProductRow.newLine() : lineKey = 'product-${UniqueKey()}';
+  _ProductRow.linked(CartItem item)
+    : lineKey = item.key,
+      productKey = item.key,
+      vehicle = item.vehicle,
+      acceptedName = item.name {
+    name.text = item.name;
+  }
+
+  final String lineKey;
+  final name = TextEditingController();
+  String? productKey;
+  bool vehicle = false;
+  String acceptedName = '';
+  void dispose() => name.dispose();
+}
+
+class _ServiceRow {
+  _ServiceRow.blank() : lineKey = 'draft-default';
+  _ServiceRow.newLine() : lineKey = 'draft-${UniqueKey()}';
+  _ServiceRow.linked(CartItem item)
+    : lineKey = item.key,
+      priceText = item.priceText,
+      quantity = item.quantity,
+      serviceId = item.product['_id']?.toString() {
+    name.text = item.name;
+  }
+  final String lineKey;
+  final name = TextEditingController();
+  String priceText = '';
+  int quantity = 1;
+  int priceEpoch = 0;
+  String? serviceId;
+  void dispose() => name.dispose();
 }

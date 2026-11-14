@@ -3,10 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xemay_app/controllers/cart_controller.dart';
 import 'package:xemay_app/controllers/sales_controller.dart';
 import 'package:xemay_app/core/theme/app_theme.dart';
+import 'package:xemay_app/models/inventory/inventory_models.dart';
 import 'package:xemay_app/models/services/service_models.dart';
 import 'package:xemay_app/views/sales/sales_tab.dart';
 import 'support/fake_customer_repository.dart';
+import 'support/fake_inventory_repository.dart';
 import 'support/fake_sales_repository.dart';
+import 'support/fake_service_repository.dart';
 
 void main() {
   testWidgets(
@@ -30,13 +33,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
-          home: Scaffold(
-            body: SalesTab(
-              controller: sale,
-              onAddProducts: () {},
-              onAddServices: () {},
-            ),
-          ),
+          home: Scaffold(body: SalesTab(controller: sale)),
         ),
       );
       void expectCustomerAlignment() {
@@ -78,20 +75,31 @@ void main() {
       }
 
       expectCustomerAlignment();
-      expect(find.text('Thêm sản phẩm / dịch vụ'), findsOneWidget);
-      expect(
-        tester.getSize(find.byTooltip('Thêm sản phẩm / dịch vụ')).height,
-        greaterThanOrEqualTo(48),
-      );
+      expect(find.text('Thêm sản phẩm / dịch vụ'), findsNothing);
+      expect(find.text('Sản phẩm & dịch vụ (1)'), findsNothing);
       await tester.enterText(
         find.byKey(const ValueKey('sales-price-xe-7')),
         '1000000',
       );
+      expect(find.text('1.000.000'), findsWidgets);
       await tester.enterText(
         find.byKey(const ValueKey('sales-customer-search')),
         'Khách',
       );
       await tester.pumpAndSettle();
+      final customerInput = tester.getRect(
+        find.byKey(const ValueKey('sales-customer-surface')),
+      );
+      final customerMenu = tester.getRect(
+        find
+            .ancestor(
+              of: find.text('Khách kiểm thử'),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect((customerMenu.top - customerInput.bottom).abs(), lessThan(12));
+      expect((customerMenu.left - customerInput.left).abs(), lessThan(12));
       await tester.tap(find.text('Khách kiểm thử'));
       await tester.pumpAndSettle();
       expect(sale.customer?['IdKH'], 1);
@@ -140,7 +148,6 @@ void main() {
       expect(find.byTooltip('Làm mới đơn'), findsNothing);
       expect(find.text('Khách lẻ'), findsNothing);
       expect(find.text('Phương thức thanh toán'), findsNothing);
-      expect(find.byTooltip('Thêm sản phẩm / dịch vụ'), findsOneWidget);
       await tester.enterText(
         find.byKey(ValueKey('sales-discount-${sale.revision}')),
         '100000',
@@ -150,6 +157,8 @@ void main() {
         '500000',
       );
       await tester.pumpAndSettle();
+      expect(find.text('100.000'), findsWidgets);
+      expect(find.text('500.000'), findsWidgets);
       expect(
         tester
             .widget<TextFormField>(
@@ -259,28 +268,19 @@ void main() {
       FakeCustomerRepository(),
       salesRepository: saved,
     );
-    var serviceOpened = false;
     addTearDown(sale.dispose);
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
-        home: Scaffold(
-          body: SalesTab(
-            controller: sale,
-            onAddProducts: () {},
-            onAddServices: () => serviceOpened = true,
-          ),
-        ),
+        home: Scaffold(body: SalesTab(controller: sale)),
       ),
     );
-    await tester.ensureVisible(find.byTooltip('Thêm sản phẩm / dịch vụ'));
-    await tester.tap(find.byTooltip('Thêm sản phẩm / dịch vụ'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Thêm dịch vụ'));
-    await tester.pumpAndSettle();
-    expect(serviceOpened, isTrue);
-    await tester.ensureVisible(find.byTooltip('Tăng số lượng Bảo dưỡng'));
-    await tester.tap(find.byTooltip('Tăng số lượng Bảo dưỡng'));
+    final increase = find.descendant(
+      of: find.byKey(const ValueKey('sales-line-dv-s')),
+      matching: find.byIcon(Icons.add),
+    );
+    await tester.ensureVisible(increase);
+    await tester.tap(increase);
     await tester.pumpAndSettle();
     expect(sale.subtotal, 400000);
     final payment = find.byKey(ValueKey('sales-paid-${sale.revision}'));
@@ -327,4 +327,262 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'sales catalog search adds a vehicle by frame number above services',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final inventory = _FrameSearchInventory();
+      final services = FakeServiceRepository()
+        ..items.add(
+          const ServiceItem(
+            id: 'dv-1',
+            name: 'Thay nhớt',
+            description: '',
+            price: 80000,
+          ),
+        );
+      final cart = CartController();
+      final sale = SalesController(cart, FakeCustomerRepository());
+      addTearDown(sale.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: SalesTab(
+              controller: sale,
+              inventoryRepositoryFactory: () => inventory,
+              serviceRepositoryFactory: () => services,
+            ),
+          ),
+        ),
+      );
+      final productName = find.byKey(
+        const ValueKey('sales-product-name-product-default'),
+      );
+      final serviceName = find.byKey(
+        const ValueKey('sales-service-name-draft-default'),
+      );
+      expect(find.byKey(const ValueKey('sales-product-search')), findsNothing);
+      expect(find.byKey(const ValueKey('sales-service-search')), findsNothing);
+      expect(find.byTooltip('Thêm dòng sản phẩm'), findsOneWidget);
+      expect(find.byTooltip('Thêm dòng dịch vụ'), findsOneWidget);
+      expect(
+        tester.getTopLeft(productName).dy,
+        lessThan(tester.getTopLeft(serviceName).dy),
+      );
+      await tester.enterText(productName, 'không có');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(cart.items, isEmpty);
+      await tester.enterText(productName, 'KHUNG-9');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Số khung: KHUNG-9'), findsOneWidget);
+      await tester.tap(find.text('Wave'));
+      await tester.pumpAndSettle();
+      expect(cart.items.single.name, 'Wave');
+      expect(cart.items.single.vehicle, isTrue);
+      final name = tester.getRect(productName);
+      final frame = tester.getRect(find.text('KHUNG-9'));
+      expect(frame.center.dy, closeTo(name.center.dy, 2));
+      expect(find.text('Số khung'), findsWidgets);
+      expect(find.text('Đơn giá'), findsWidgets);
+      final quantity = tester.getRect(
+        find.byKey(const ValueKey('sales-qty-xe-9')),
+      );
+      final price = tester.getRect(
+        find.byKey(const ValueKey('sales-price-xe-9')),
+      );
+      expect(quantity.width, lessThan(price.width));
+      expect(quantity.height, closeTo(price.height, 1));
+      final list = tester.getRect(
+        find.byKey(const ValueKey('sales-product-list')),
+      );
+      final remove = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sales-line-xe-9')),
+          matching: find.byTooltip('Bỏ khỏi đơn'),
+        ),
+      );
+      expect(remove.right, lessThanOrEqualTo(list.right + 1));
+      expect(remove.left, greaterThan(price.left));
+      final addProduct = tester.getRect(find.byTooltip('Thêm dòng sản phẩm'));
+      expect(remove.center.dx, closeTo(addProduct.center.dx, 1));
+      final addService = tester.getRect(find.byTooltip('Thêm dòng dịch vụ'));
+      final serviceRemove = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sales-line-draft-default')),
+          matching: find.byTooltip('Bỏ khỏi đơn'),
+        ),
+      );
+      expect(serviceRemove.center.dx, closeTo(addService.center.dx, 1));
+      expect(
+        tester.getTopLeft(productName).dy,
+        lessThan(tester.getTopLeft(serviceName).dy),
+      );
+      await tester.enterText(serviceName, 'nhớt');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Thay nhớt'));
+      await tester.pumpAndSettle();
+      expect(cart.items.map((item) => item.name), contains('Thay nhớt'));
+      expect(find.text('80.000'), findsWidgets);
+      expect(
+        tester.getTopLeft(find.text('Thay nhớt')).dy,
+        greaterThan(tester.getTopLeft(productName).dy),
+      );
+    },
+  );
+
+  testWidgets('an unknown service is created when the order is saved', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final sales = FakeSalesRepository();
+    final services = FakeServiceRepository();
+    final sale = SalesController(
+      CartController(),
+      FakeCustomerRepository(),
+      salesRepository: sales,
+    );
+    addTearDown(sale.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SalesTab(
+            controller: sale,
+            serviceRepositoryFactory: () => services,
+            inventoryRepositoryFactory: FakeInventoryRepository.new,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('sales-service-name-draft-default')),
+      'Rửa xe',
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('sales-price-draft-default-0')),
+      '50000',
+    );
+    await tester.enterText(find.byKey(const ValueKey('sales-paid-0')), '50000');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Lưu đơn hàng'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(services.items.single.name, 'Rửa xe');
+    expect(services.items.single.price, 50000);
+    expect(sales.lastDraft?.lines.single.name, 'Rửa xe');
+    expect(sales.lastDraft?.lines.single.serviceId, 'service-0');
+  });
+
+  testWidgets('sales product search skips unclassified vehicles', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final inventory = _ClassifiedInventory();
+    final sale = SalesController(CartController(), FakeCustomerRepository());
+    addTearDown(sale.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SalesTab(
+            controller: sale,
+            inventoryRepositoryFactory: () => inventory,
+            serviceRepositoryFactory: FakeServiceRepository.new,
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('sales-product-name-product-default')),
+      '2308',
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Wave S'), findsNothing);
+    expect(find.text('Xe mới'), findsOneWidget);
+    expect(inventory.conditions, ['moi', 'cu']);
+    expect(inventory.availabilities.toSet(), {'available'});
+  });
+}
+
+class _ClassifiedInventory extends FakeInventoryRepository {
+  final conditions = <String>[];
+  final availabilities = <String>[];
+
+  @override
+  Future<InventoryPage> fetch(
+    InventorySection view, {
+    String search = '',
+    String condition = '',
+    String availability = 'all',
+    int page = 0,
+    int pageSize = 30,
+  }) async {
+    if (view == InventorySection.vehicles) {
+      conditions.add(condition);
+      availabilities.add(availability);
+      if (condition == 'moi') {
+        return const InventoryPage([
+          {
+            'IdXe': 11,
+            'TenXe': 'Xe mới',
+            'TinhTrangXe': 'moi',
+            'SoLuongTon': 1,
+          },
+        ], 1);
+      }
+      return const InventoryPage([], 0);
+    }
+    availabilities.add(availability);
+    return const InventoryPage([], 0);
+  }
+}
+
+class _FrameSearchInventory extends FakeInventoryRepository {
+  bool connected = false;
+
+  @override
+  Future<void> connect() async {
+    connected = true;
+  }
+
+  @override
+  Future<InventoryPage> fetch(
+    InventorySection view, {
+    String search = '',
+    String condition = '',
+    String availability = 'all',
+    int page = 0,
+    int pageSize = 30,
+  }) async {
+    if (!connected) throw StateError('offline');
+    if (view == InventorySection.vehicles && search.contains('KHUNG')) {
+      return const InventoryPage([
+        {
+          'IdXe': 9,
+          'TenXe': 'Wave',
+          'SoKhung': 'KHUNG-9',
+          'SoMay': 'MAY-9',
+          'SoLuongTon': 1,
+        },
+      ], 1);
+    }
+    return const InventoryPage([], 0);
+  }
 }

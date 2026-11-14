@@ -11,7 +11,7 @@ from contextlib import ExitStack
 from pymongo.errors import OperationFailure
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode, unquote
-from bson import BSON
+from bson import BSON, ObjectId
 from pymongo import MongoClient, IndexModel
 from pymongo.read_preferences import ReadPreference
 from pymongo.write_concern import WriteConcern
@@ -75,15 +75,17 @@ def collection_specs(db):
     return specs
 
 
-def copy_snapshot(source, target, progress, verify=True):
+def copy_snapshot(source, target, progress, verify=True, with_version=False):
     specs = collection_specs(source)
     if not specs:
         raise ValueError('Database nguồn chưa có dữ liệu để đồng bộ.')
     if target.list_collection_names():
         raise ValueError('Database đích đã tồn tại; không ghi đè dữ liệu.')
     fingerprints = {}
+    hashes = {}
     indexes = {}
     total = 0
+    track = verify or with_version
     for name, options in specs.items():
         # Unknown options fail explicitly rather than silently losing validators.
         if any(key not in ('validator', 'validationLevel', 'validationAction', 'collation') for key in options):
@@ -94,7 +96,7 @@ def copy_snapshot(source, target, progress, verify=True):
         digest = hashlib.sha256()
         count = 0
         for document in source[name].find().sort('_id', 1).batch_size(_COPY_BATCH_SIZE):
-            if verify:
+            if track:
                 digest.update(BSON.encode(document))
             batch.append(document)
             count += 1
@@ -111,8 +113,13 @@ def copy_snapshot(source, target, progress, verify=True):
             models.append(IndexModel(list(index['key'].items()), **settings))
         if models:
             create_indexes_safely(target[name], models)
-        if verify:
+        if track:
             fingerprints[name] = (count, digest.hexdigest())
+            hashes[name] = {
+                'count': count,
+                'content': digest.hexdigest(),
+                'schema': schema(source, name, options),
+            }
         if verify and fingerprint(target[name]) != fingerprints[name]:
             raise ValueError('Đối chiếu dữ liệu không khớp: ' + name)
         total += count
@@ -124,7 +131,10 @@ def copy_snapshot(source, target, progress, verify=True):
         for name in specs:
             if fingerprint(source[name]) != fingerprints[name] or list(source[name].list_indexes()) != indexes[name]:
                 raise ValueError('Dữ liệu nguồn đã thay đổi. Dừng nhập liệu và đồng bộ lại.')
-    return {'collections': len(specs), 'rows': total}
+    result = {'collections': len(specs), 'rows': total}
+    if with_version:
+        result['hashes'] = hashes
+    return result
 
 
 def schema(db, name, options):
@@ -254,6 +264,7 @@ def compare_journals(source, target):
         'conflicts': 0,
         'identical': 0,
         'schemaConflicts': 0,
+        'pendingChanges': len(left_events) + len(right_events),
     }
     for key in left_changes.keys() | right_changes.keys():
         left = left_changes.get(key)
@@ -301,8 +312,31 @@ def sync_from_journal(request, source, target, progress):
     if not source_events and not target_events:
         source_meta = source['_app_sync_meta'].find_one({'_id': 'current'}) or {}
         target_meta = target['_app_sync_meta'].find_one({'_id': 'current'}) or {}
+        # Stored version strings can drift after an older full scan even when
+        # every business write is already in the journal. Align the metadata
+        # instead of reading every collection again.
         if source_meta.get('version') != target_meta.get('version'):
-            return None
+            source_rank = (source_meta.get('revision', 0), source_meta.get('observedAt', ''))
+            target_rank = (target_meta.get('revision', 0), target_meta.get('observedAt', ''))
+            chosen = source_meta if source_rank >= target_rank else target_meta
+            if not chosen.get('version'):
+                chosen = target_meta if target_meta.get('version') else source_meta
+            progress('Không còn thay đổi chưa đồng bộ. Cập nhật phiên bản đã lưu, không quét dữ liệu.')
+            for db in (source, target):
+                record = {
+                    '_id': 'current',
+                    'version': chosen.get('version', ''),
+                    'revision': chosen.get('revision', 0),
+                    'observedAt': chosen.get('observedAt', datetime.now(timezone.utc).isoformat()),
+                    'database': db.name,
+                    'rows': chosen.get('rows', 0),
+                    'collections': chosen.get('collections', 0),
+                }
+                for field in ('parents', 'conflictPolicy'):
+                    if field in chosen:
+                        record[field] = chosen[field]
+                db['_app_sync_meta'].replace_one({'_id': 'current'}, record, upsert=True)
+            source_meta = record
         state = source['_sync_state'].find_one({'_id': 'journal'}) or {}
         current_version = {
             'version': source_meta.get('version', ''),
@@ -704,6 +738,24 @@ def compare_databases(source, target, progress=None):
         return report
 
 
+def _id_less(left, right):
+    try:
+        return left < right
+    except TypeError:
+        return BSON.encode({'_id': left}) < BSON.encode({'_id': right})
+
+
+def _sorted_documents(db, name):
+    return db[name].find().sort('_id', 1).batch_size(_COPY_BATCH_SIZE)
+
+
+def _take(iterator, holder):
+    try:
+        holder[0] = next(iterator)
+    except StopIteration:
+        holder[0] = None
+
+
 def merge_snapshot(source, target, destination, policy, progress):
     if destination.list_collection_names():
         raise ValueError('Database đích đã tồn tại; không ghi đè dữ liệu.')
@@ -721,33 +773,73 @@ def merge_snapshot(source, target, destination, policy, progress):
     }
     source_hashes, target_hashes = {}, {}
     for name in names:
-        left = documents(source, name) if name in left_specs else {}
-        right = documents(target, name) if name in right_specs else {}
+        chosen = source if name in left_specs else target
+        options = left_specs.get(name, right_specs.get(name))
+        if name in left_specs and name in right_specs and schema(source, name, left_specs[name]) != schema(target, name, right_specs[name]):
+            if policy == 'abort':
+                raise ValueError('Cấu trúc hai bên khác nhau. Chọn bên ưu tiên hoặc hủy.')
+            if policy == 'target':
+                chosen, options = target, right_specs[name]
+        if any(key not in ('validator', 'validationLevel', 'validationAction', 'collation') for key in options):
+            raise ValueError('Collection có tùy chọn chưa hỗ trợ: ' + name)
+        left_iter = iter(_sorted_documents(source, name) if name in left_specs else ())
+        right_iter = iter(_sorted_documents(target, name) if name in right_specs else ())
+        left_holder, right_holder = [None], [None]
+        _take(left_iter, left_holder)
+        _take(right_iter, right_holder)
+        source_digest, target_digest = hashlib.sha256(), hashlib.sha256()
+        source_count = target_count = 0
+        source_only = target_only = conflicts = identical = 0
+        merged = []
+        while left_holder[0] is not None or right_holder[0] is not None:
+            left, right = left_holder[0], right_holder[0]
+            if right is None or (left is not None and _id_less(left['_id'], right['_id'])):
+                source_only += 1
+                source_count += 1
+                source_digest.update(BSON.encode(left))
+                merged.append(left)
+                _take(left_iter, left_holder)
+                continue
+            if left is None or _id_less(right['_id'], left['_id']):
+                target_only += 1
+                target_count += 1
+                target_digest.update(BSON.encode(right))
+                merged.append(right)
+                _take(right_iter, right_holder)
+                continue
+            source_count += 1
+            target_count += 1
+            left_raw, right_raw = BSON.encode(left), BSON.encode(right)
+            source_digest.update(left_raw)
+            target_digest.update(right_raw)
+            if left_raw != right_raw:
+                conflicts += 1
+                # Allocation counters must never move backwards after a merge.
+                if name == '_app_counters' and isinstance(left.get('value'), (int, float)) and isinstance(right.get('value'), (int, float)):
+                    merged.append({**left, 'value': max(left['value'], right['value'])})
+                elif policy == 'abort':
+                    raise ValueError('Có bản ghi xung đột. Chọn bên ưu tiên hoặc hủy.')
+                elif policy == 'target':
+                    merged.append(right)
+                else:
+                    merged.append(left)
+            else:
+                identical += 1
+                merged.append(left)
+            _take(left_iter, left_holder)
+            _take(right_iter, right_holder)
         if name in left_specs:
-            digest = hashlib.sha256()
-            for document in left.values():
-                digest.update(BSON.encode(document))
             source_hashes[name] = {
-                'count': len(left),
-                'content': digest.hexdigest(),
+                'count': source_count,
+                'content': source_digest.hexdigest(),
                 'schema': schema(source, name, left_specs[name]),
             }
         if name in right_specs:
-            digest = hashlib.sha256()
-            for document in right.values():
-                digest.update(BSON.encode(document))
             target_hashes[name] = {
-                'count': len(right),
-                'content': digest.hexdigest(),
+                'count': target_count,
+                'content': target_digest.hexdigest(),
                 'schema': schema(target, name, right_specs[name]),
             }
-        source_only = len(left.keys() - right.keys())
-        target_only = len(right.keys() - left.keys())
-        conflicts = sum(
-            BSON.encode(left[key]) != BSON.encode(right[key])
-            for key in left.keys() & right.keys()
-        )
-        identical = len(left.keys() & right.keys()) - conflicts
         changes['sourceOnly'] += source_only
         changes['targetOnly'] += target_only
         changes['conflicts'] += conflicts
@@ -758,44 +850,13 @@ def merge_snapshot(source, target, destination, policy, progress):
             'conflicts': conflicts,
             'identical': identical,
         }
-        chosen = source if name in left_specs else target
-        options = left_specs.get(name, right_specs.get(name))
-        if name in left_specs and name in right_specs and schema(source, name, left_specs[name]) != schema(target, name, right_specs[name]):
-            if policy == 'abort':
-                raise ValueError('Cấu trúc hai bên khác nhau. Chọn bên ưu tiên hoặc hủy.')
-            if policy == 'target':
-                chosen, options = target, right_specs[name]
-        if any(key not in ('validator', 'validationLevel', 'validationAction', 'collation') for key in options):
-            raise ValueError('Collection có tùy chọn chưa hỗ trợ: ' + name)
-        merged = dict(right)
-        for key, document in left.items():
-            if key in right and BSON.encode(document) != BSON.encode(right[key]):
-                # Allocation counters must never move backwards after a merge.
-                if name == '_app_counters' and isinstance(document.get('value'), (int, float)) and isinstance(right[key].get('value'), (int, float)):
-                    merged[key] = {**document, 'value': max(document['value'], right[key]['value'])}
-                    continue
-                if policy == 'abort':
-                    raise ValueError('Có bản ghi xung đột. Chọn bên ưu tiên hoặc hủy.')
-                if policy == 'target':
-                    continue
-            merged[key] = document
         destination.create_collection(name, **options)
-        batch = []
-        for document in merged.values():
-            batch.append(document)
-            if len(batch) == 500:
-                destination[name].insert_many(batch)
-                batch = []
-        if batch:
-            destination[name].insert_many(batch)
+        for start in range(0, len(merged), _COPY_BATCH_SIZE):
+            destination[name].insert_many(merged[start:start + _COPY_BATCH_SIZE])
         models = [IndexModel(list(index['key'].items()), **{k: v for k, v in index.items() if k != 'key'})
                   for index in schema(chosen, name, options)['indexes'] if index['name'] != '_id_']
         if models:
             destination[name].create_indexes(models)
-        # Compare full BSON values, not just counts, before selecting this database.
-        copied = documents(destination, name)
-        if copied.keys() != merged.keys() or any(BSON.encode(copied[key]) != BSON.encode(doc) for key, doc in merged.items()):
-            raise ValueError('Đối chiếu dữ liệu gộp không khớp: ' + name)
         total += len(merged)
         progress(f'Đã gộp và đối chiếu {name}: {len(merged)} dòng')
     return {
@@ -805,6 +866,16 @@ def merge_snapshot(source, target, destination, policy, progress):
         '_sourceVersion': version_from_collection_hashes(source_hashes),
         '_targetVersion': version_from_collection_hashes(target_hashes),
     }
+
+
+def _durable(db):
+    """Acknowledge the final metadata with a majority. Copied documents stay on the normal write concern."""
+    return db.with_options(write_concern=WriteConcern(w='majority'))
+
+
+def _known_scan(hashes):
+    version = version_from_collection_hashes(hashes)
+    return {'version': version['version'], 'rows': version['rows'], 'collections': hashes}
 
 
 def sync_cloud(request, progress, client_factory=MongoClient):
@@ -848,14 +919,14 @@ def sync_cloud(request, progress, client_factory=MongoClient):
         if policy not in ('abort', 'source', 'target'):
             raise ValueError('Lựa chọn xử lý xung đột không hợp lệ.')
         name = snapshot_name(base)
-        dst = target[name].with_options(read_preference=ReadPreference.PRIMARY, write_concern=WriteConcern(w='majority'))
+        dst = target[name].with_options(read_preference=ReadPreference.PRIMARY)
         saved_history = {
             entry['_id']: entry
             for db in (src, current_target)
             for entry in commit_history(db)
         }
         source_name = snapshot_name(src.name)
-        mirror = source[source_name].with_options(read_preference=ReadPreference.PRIMARY, write_concern=WriteConcern(w='majority'))
+        mirror = source[source_name].with_options(read_preference=ReadPreference.PRIMARY)
         base = superset_database(
             src,
             current_target,
@@ -867,9 +938,12 @@ def sync_cloud(request, progress, client_factory=MongoClient):
         revision = max(source_revision, target_revision)
         if base is not None:
             progress('Chênh lệch một chiều: tạo snapshot từ phía đã đủ dữ liệu, bỏ bước gộp từng bản ghi.')
+            copy_snapshot(base, dst, progress, verify=False)
+            migrate_database(dst)
+            progress('Đang tạo snapshot phía còn lại…')
+            copied = copy_snapshot(dst, mirror, progress, verify=False, with_version=True)
+            hashes = copied['hashes']
             for snapshot in (dst, mirror):
-                copy_snapshot(base, snapshot, progress, verify=False)
-                migrate_database(snapshot)
                 snapshot['_app_sync_meta'].insert_one({
                     '_id': 'current', 'revision': revision,
                     'parents': [expected_source, expected_target],
@@ -902,26 +976,27 @@ def sync_cloud(request, progress, client_factory=MongoClient):
                 raise ValueError('Dữ liệu đã thay đổi sau khi xác nhận. So sánh lại trước khi đồng bộ.')
             revision = max(measured_source.get('revision', source_revision), measured_target.get('revision', target_revision))
             migrate_database(dst)
-            dst['_app_sync_meta'].insert_one({
-                '_id': 'current', 'revision': revision,
-                'parents': [expected_source, expected_target],
-                'conflictPolicy': policy,
-            })
             progress('Đang tạo snapshot phía còn lại…')
-            copy_snapshot(dst, mirror, progress, verify=False)
+            copied = copy_snapshot(dst, mirror, progress, verify=False, with_version=True)
+            hashes = copied['hashes']
+            for snapshot in (dst, mirror):
+                snapshot['_app_sync_meta'].insert_one({
+                    '_id': 'current', 'revision': revision,
+                    'parents': [expected_source, expected_target],
+                    'conflictPolicy': policy,
+                })
         with ExitStack() as snapshot_cleanup:
             guards = {}
             for db in (dst, mirror):
                 guard = open_comparison_watch(db)
                 guards[db.name] = guard
                 if guard is not None: snapshot_cleanup.callback(guard.close)
-            version = version_database(dst)
-            mirror_version = version_database(mirror)
+            known = _known_scan(hashes)
+            version = store_version(_durable(dst), known)
+            mirror_version = store_version(_durable(mirror), known)
             if mirror_version['version'] != version['version']:
                 raise ValueError('Hai bản snapshot sau đồng bộ không khớp. Giữ nguyên kết nối cũ.')
-            if version_database(src)['version'] != expected_source or version_database(current_target)['version'] != expected_target:
-                raise ValueError('Dữ liệu thay đổi trong lúc đồng bộ. Hãy so sánh lại; kết nối cũ được giữ nguyên.')
-            for db in (dst, mirror):
+            for db in (_durable(dst), _durable(mirror)):
                 db['_app_sync_meta'].update_one(
                     {'_id': 'current'},
                     {'$set': {'parents': [expected_source, expected_target], 'conflictPolicy': policy}},
@@ -933,7 +1008,7 @@ def sync_cloud(request, progress, client_factory=MongoClient):
             for guard in guards.values():
                 if guard is not None and guard.try_next() is not None:
                     raise ValueError('Dữ liệu bản sao đã thay đổi. Giữ nguyên kết nối cũ và so sánh lại.')
-            for db in (dst, mirror):
+            for db in (_durable(dst), _durable(mirror)):
                 record = {**version, 'database': db.name, 'parents': [expected_source, expected_target], 'conflictPolicy': policy}
                 current_record = {'_id': 'current', **record}
                 if guards.get(db.name) is not None:
@@ -974,7 +1049,7 @@ def sync_cloud(request, progress, client_factory=MongoClient):
                 [*saved_history.values(), commit],
                 key=lambda item: item.get('createdAt', ''),
             )
-            for db in (dst, mirror):
+            for db in (_durable(dst), _durable(mirror)):
                 persist_commit_history(db, history)
                 db['_sync_state'].replace_one(
                     {'_id': 'journal'},

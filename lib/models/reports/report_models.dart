@@ -784,7 +784,7 @@ class ReportCalculator {
       final vehicleId = vehicle['IdXe'];
       final extension = vehicleReceiptHeaders[vehicleId];
       final batchId = vehicle['IdNhapHang'] ?? extension?['IdNhapHang'];
-      final header = includedReceipts[batchId];
+      final header = batchId == null ? null : includedReceipts[batchId];
       if (header == null ||
           vehicleId == null ||
           detailedVehicleIds.contains(vehicleId) ||

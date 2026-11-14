@@ -542,6 +542,28 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(find.byKey(const ValueKey('reports-overview')), findsOneWidget);
+      final cash = find.byKey(const ValueKey('overview-summary-cash'));
+      expect(
+        find.descendant(of: cash, matching: find.text('Bán hàng')),
+        findsOneWidget,
+      );
+      final saleLabel = t.getRect(
+        find.descendant(of: cash, matching: find.text('Bán hàng')),
+      );
+      final saleNote = t.getRect(
+        find.descendant(
+          of: cash,
+          matching: find.text('(Xe mới, Xe cũ, Phụ tùng, Dịch vụ)'),
+        ),
+      );
+      expect(saleNote.center.dy, closeTo(saleLabel.center.dy, 1));
+      expect(saleNote.left, greaterThan(saleLabel.right));
+      for (final label in ['Xe mới', 'Xe cũ', 'Phụ tùng', 'Dịch vụ']) {
+        expect(
+          find.descendant(of: cash, matching: find.text(label)),
+          findsNothing,
+        );
+      }
       expect(find.text('Doanh thu'), findsOneWidget);
       expect(
         t.getRect(find.byKey(const ValueKey('report-date-range'))).left,

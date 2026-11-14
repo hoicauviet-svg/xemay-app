@@ -71,13 +71,13 @@ class MongoInventoryRepository implements InventoryRepository {
       filter[r'$or'] = [
         {
           view == InventorySection.vehicles ? 'TenXe' : 'TenSanPham': {
-            r'$regex': RegExp.escape(term),
+            r'$regex': searchPattern(term),
             r'$options': 'i',
           },
         },
         if (view != InventorySection.vehicles)
           {
-            'MaSanPham': {r'$regex': RegExp.escape(term), r'$options': 'i'},
+            'MaSanPham': {r'$regex': searchPattern(term), r'$options': 'i'},
           },
         if (int.tryParse(term) != null)
           {
@@ -88,6 +88,18 @@ class MongoInventoryRepository implements InventoryRepository {
       ];
     }
     return filter;
+  }
+
+  /// Đ (U+0110) and Ð (U+00D0) look the same but are different letters.
+  static const _strokeD = '\u0110\u00D0\u0111\u00F0';
+
+  static String searchPattern(String term) {
+    final buffer = StringBuffer();
+    for (final rune in term.runes) {
+      final ch = String.fromCharCode(rune);
+      buffer.write(_strokeD.contains(ch) ? '[$_strokeD]' : RegExp.escape(ch));
+    }
+    return buffer.toString();
   }
 
   @override
@@ -106,7 +118,7 @@ class MongoInventoryRepository implements InventoryRepository {
     if (view == InventorySection.vehicles) filter['DangNhapHang'] = null;
     if (view == InventorySection.vehicles && search.trim().isNotEmpty) {
       final pattern = {
-        r'$regex': RegExp.escape(search.trim()),
+        r'$regex': searchPattern(search.trim()),
         r'$options': 'i',
       };
       final extraFilter = {

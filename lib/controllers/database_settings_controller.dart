@@ -223,6 +223,11 @@ class DatabaseSettingsController extends ChangeNotifier {
   String _uriForDatabase(String uri, String database) =>
       Uri.parse(uri).replace(path: '/$database').toString();
 
+  void stageComparison(CloudComparison value, {required bool upload}) {
+    comparison = value;
+    _comparisonUpload = upload;
+  }
+
   Future<void> compareCloud({required bool upload}) =>
       _perform(SettingsSection.cloud, () async {
         comparison = null;

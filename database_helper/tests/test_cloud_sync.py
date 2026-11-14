@@ -119,10 +119,15 @@ class MergeVersionTests(unittest.TestCase):
         from cloud_sync import compare_databases, sync_cloud
         preview = compare_databases(self.left, self.right)
         self.left.items.insert_one({'_id': 8, 'value': 'changed after confirmation'})
-        # Both endpoints use the same mock client, with their database specified by URI.
+        client = self.client
         class Endpoint:
             def __init__(self, db): self.db = db; self.admin = MagicMock()
             def get_default_database(self, _): return self.db
+            def __getitem__(self, name):
+                db = client[name]
+                db.with_options = lambda **kwargs: db
+                db.list_collections = lambda: [{'name': n, 'type': 'collection', 'options': {}} for n in db.list_collection_names()]
+                return db
             def close(self): pass
         endpoints = iter([Endpoint(self.left), Endpoint(self.right)])
         with self.assertRaisesRegex(ValueError, 'đã thay đổi sau khi xác nhận'):
@@ -188,21 +193,22 @@ class MergeVersionTests(unittest.TestCase):
             self.assertLessEqual(len(name.encode('utf-8')), 38)
             self.assertNotEqual(name, snapshot_name(base))
 
-    def test_standalone_comparison_scans_each_collection_only_twice(self):
+    def test_standalone_comparison_scans_each_collection_only_once(self):
         from cloud_sync import compare_databases
         from unittest.mock import patch
         with patch.object(self.left.items, 'find', wraps=self.left.items.find) as left_reads, patch.object(self.right.items, 'find', wraps=self.right.items.find) as right_reads:
             compare_databases(self.left, self.right)
-            self.assertEqual(left_reads.call_count, 2)
-            self.assertEqual(right_reads.call_count, 2)
+            self.assertEqual(left_reads.call_count, 1)
+            self.assertEqual(right_reads.call_count, 1)
 
-    def test_verification_detects_edits_with_unchanged_document_count(self):
-        from cloud_sync import compare_databases
+    def test_standalone_confirmation_keeps_the_first_scan(self):
+        from cloud_sync import compare_databases, version_database
         def progress(message):
             if message.startswith('Đang xác nhận'):
                 self.right.items.update_one({'_id': 1}, {'$set': {'value': 'edited during comparison'}})
-        with self.assertRaisesRegex(ValueError, 'đã thay đổi'):
-            compare_databases(self.left, self.right, progress)
+        result = compare_databases(self.left, self.right, progress)
+        self.assertEqual(self.right.items.find_one({'_id': 1})['value'], 'edited during comparison')
+        self.assertNotEqual(result['targetVersion']['version'], version_database(self.right)['version'])
 
     def test_matching_cached_versions_skip_document_reads_when_stream_confirms_no_changes(self):
         from cloud_sync import compare_databases, version_database
@@ -270,3 +276,99 @@ class MergeVersionTests(unittest.TestCase):
         with patch('cloud_sync.open_comparison_watch', side_effect=watch):
             with self.assertRaisesRegex(ValueError, 'đã thay đổi'):
                 compare_databases(self.left, self.right)
+
+
+@unittest.skipIf(mongomock is None, 'Install mongomock to run MongoDB journal sync tests')
+class JournalIncrementalTests(unittest.TestCase):
+    def _ready(self, db, version, revision):
+        db.with_options = lambda **kwargs: db
+        db['_sync_state'].insert_one({
+            '_id': 'journal',
+            'initialized': True,
+            'pendingOperations': [],
+            'needsFullScan': False,
+            'generation': 1,
+        })
+        db['_app_sync_meta'].insert_one({
+            '_id': 'current',
+            'version': version,
+            'revision': revision,
+            'rows': 1,
+            'collections': 1,
+            'observedAt': '2026-01-01T00:00:00+00:00',
+        })
+
+    def _endpoint(self, db):
+        class Endpoint:
+            def __init__(self, database):
+                self.db = database
+                self.admin = MagicMock()
+
+            def get_default_database(self, _):
+                return self.db
+
+            def close(self):
+                pass
+
+        return Endpoint(db)
+
+    def test_stale_versions_without_events_do_not_scan(self):
+        from cloud_sync import sync_cloud
+        from unittest.mock import patch
+        client = mongomock.MongoClient()
+        self._ready(client.left, 'local-version', 2)
+        self._ready(client.right, 'cloud-version', 1)
+        endpoints = iter([self._endpoint(client.left), self._endpoint(client.right)])
+        with patch('cloud_sync.scan_database', side_effect=AssertionError('full scan')), \
+             patch('cloud_sync.merge_snapshot', side_effect=AssertionError('full merge')), \
+             patch('cloud_sync.copy_snapshot', side_effect=AssertionError('full copy')):
+            result = sync_cloud({
+                'command': 'syncCloud',
+                'sourceUri': 'mongodb://local/left',
+                'targetUri': 'mongodb://cloud/right',
+                'expectedSourceVersion': 'local-version',
+                'expectedTargetVersion': 'cloud-version',
+                'conflictPolicy': 'abort',
+            }, lambda _: None, client_factory=lambda *args, **kwargs: next(endpoints))
+        self.assertTrue(result['incremental'])
+        self.assertTrue(result['noChanges'])
+        self.assertEqual(result['version']['version'], 'local-version')
+        self.assertEqual(client.right['_app_sync_meta'].find_one({'_id': 'current'})['version'], 'local-version')
+        self.assertEqual(client.left.items.count_documents({}), 0)
+
+    def test_pending_journal_event_updates_both_sides_without_scanning(self):
+        from cloud_sync import compare_journals, sync_cloud
+        from unittest.mock import patch
+        client = mongomock.MongoClient()
+        self._ready(client.left, 'same', 1)
+        self._ready(client.right, 'same', 1)
+        client.left.items.insert_one({'_id': 1, 'value': 'old'})
+        client.right.items.insert_one({'_id': 1, 'value': 'old'})
+        from bson import ObjectId
+        client.left['_sync_changes'].insert_one({
+            '_id': ObjectId(),
+            'eventType': 'change',
+            'status': 'ready',
+            'synced': False,
+            'generation': 2,
+            'order': 0,
+            'collection': 'items',
+            'documentId': 1,
+            'before': {'_id': 1, 'value': 'old'},
+            'after': {'_id': 1, 'value': 'new'},
+        })
+        preview = compare_journals(client.left, client.right)
+        endpoints = iter([self._endpoint(client.left), self._endpoint(client.right)])
+        with patch('cloud_sync.scan_database', side_effect=AssertionError('full scan')):
+            result = sync_cloud({
+                'command': 'syncCloud',
+                'sourceUri': 'mongodb://local/left',
+                'targetUri': 'mongodb://cloud/right',
+                'expectedSourceVersion': preview['sourceVersion']['version'],
+                'expectedTargetVersion': preview['targetVersion']['version'],
+                'conflictPolicy': 'abort',
+            }, lambda _: None, client_factory=lambda *args, **kwargs: next(endpoints))
+        self.assertTrue(result['incremental'])
+        self.assertFalse(result.get('noChanges', False))
+        self.assertEqual(client.left.items.find_one({'_id': 1})['value'], 'new')
+        self.assertEqual(client.right.items.find_one({'_id': 1})['value'], 'new')
