@@ -168,6 +168,22 @@ void main() {
     expect(debt.rows[0][3], 1);
     expect(data.sections[ReportKind.pawnDebt]!.totals['Còn nợ'], 700);
     expect(data.sections[ReportKind.pawnDebt]!.rows.length, 1);
+    final withAddress = fixture();
+    withAddress['KhachHang'] = [
+      {
+        'IdKH': 7,
+        'TenKhachHang': 'Khách cầm',
+        'DiaChiChiTiet': 'Nhà 12, Phường A',
+      },
+    ];
+    withAddress['CamDo']!.first['IdKhachHang'] = 7;
+    final pawnDebt = build(withAddress).sections[ReportKind.pawnDebt]!;
+    final addressColumn = pawnDebt.columns.indexWhere(
+      (column) => column.label == 'Địa chỉ',
+    );
+    expect(addressColumn, 3);
+    expect(pawnDebt.rows.single[addressColumn], 'Nhà 12, Phường A');
+    expect(pawnDebt.rows.single[2], 'Khách cầm');
     expect(data.sections[ReportKind.pawn]!.totals, {
       'Phiếu mới': 1,
       'Tiền cho vay': 1000,

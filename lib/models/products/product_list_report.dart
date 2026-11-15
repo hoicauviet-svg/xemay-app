@@ -2,6 +2,14 @@ import '../reports/report_models.dart';
 import '../services/service_models.dart';
 
 class ProductListReport {
+  static String vehicleTitle(Map<String, dynamic> row) {
+    final brand = '${row['TenHang'] ?? ''}'.trim();
+    final name = '${row['TenXe'] ?? ''}'.trim();
+    if (brand.isEmpty) return name;
+    if (name.isEmpty) return brand;
+    return '$brand $name';
+  }
+
   static num? _sum(Iterable<dynamic> values) {
     num total = 0;
     for (final v in values) {
@@ -43,7 +51,7 @@ class ProductListReport {
         if (vehicle)
           [
             r['IdXe'],
-            r['TenXe'],
+            vehicleTitle(r),
             r['SoKhung'],
             r['SoMay'],
             r['BienSo'],

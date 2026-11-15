@@ -8,6 +8,8 @@ void main() {
       final report = ProductListReport.products([
         {
           'IdXe': 1,
+          'TenHang': 'Honda',
+          'TenXe': 'Wave',
           'GiaNhap': 100,
           'GiaBan': 150,
           'TongChiPhi': 10,
@@ -15,12 +17,19 @@ void main() {
         },
         {
           'IdXe': 2,
+          'TenXe': 'Sirius',
           'GiaNhap': 200,
           'GiaBan': null,
           'TongChiPhi': 20,
           'SoLuongTon': 0,
         },
       ], vehicle: true);
+      expect(
+        report.columns.map((column) => column.label),
+        isNot(contains('Hãng')),
+      );
+      expect(report.rows.first[1], 'Honda Wave');
+      expect(report.rows[1][1], 'Sirius');
       expect(report.totals, {
         'Giá nhập': 300,
         'Chi phí': 30,

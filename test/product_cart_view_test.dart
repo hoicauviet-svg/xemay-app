@@ -31,6 +31,8 @@ void main() {
     expect(repository.lastAvailability, 'available');
     expect(find.text('TỒN KHO'), findsOneWidget);
     expect(find.text('THÔNG TIN'), findsOneWidget);
+    expect(find.text('HÃNG'), findsNothing);
+    expect(find.text('Honda Xe kiểm thử'), findsOneWidget);
     expect(find.text('CHI PHÍ'), findsOneWidget);
     expect(find.text('Số khung: KHUNG-TEST'), findsOneWidget);
     final horizontal = tester.widget<SingleChildScrollView>(

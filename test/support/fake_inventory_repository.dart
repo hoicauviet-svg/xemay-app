@@ -56,6 +56,7 @@ class FakeInventoryRepository implements InventoryRepository {
           'IdXe': 7,
           'IdSanPham': 1,
           'TenXe': 'Xe kiểm thử',
+          'TenHang': 'Honda',
           'TinhTrangXe': condition.isEmpty ? 'moi' : condition,
           'SoKhung': 'KHUNG-TEST',
           'GiaNhap': 1000000,

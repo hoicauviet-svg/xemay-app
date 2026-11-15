@@ -354,7 +354,11 @@ void main() {
           {'IdHoaDon': 2, 'SoTienConNo': -5000},
         ],
         'KhachHang': [
-          {'IdKH': 1, 'TenKhachHang': 'Khách cầm đồ'},
+          {
+            'IdKH': 1,
+            'TenKhachHang': 'Khách cầm đồ',
+            'DiaChiChiTiet': '12 Nguyễn Trãi',
+          },
         ],
         'CamDo': [
           {
@@ -401,6 +405,7 @@ void main() {
       await t.tap(find.widgetWithText(Tab, 'Cầm đồ'));
       await t.pumpAndSettle();
       expect(find.text('Khách cầm đồ'), findsOneWidget);
+      expect(find.text('12 Nguyễn Trãi'), findsOneWidget);
       expect(find.text('Xe kiểm tra'), findsOneWidget);
       expect(find.text('400.000 đ'), findsWidgets);
       expect(find.text('Số dư hiện tại'), findsNothing);

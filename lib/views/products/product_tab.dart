@@ -276,7 +276,9 @@ class _ProductTabState extends State<ProductTab>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${row[vehicle ? 'TenXe' : 'TenSanPham'] ?? ''}',
+                                  vehicle
+                                      ? ProductListReport.vehicleTitle(row)
+                                      : '${row['TenSanPham'] ?? ''}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -363,7 +365,7 @@ class _ProductTabState extends State<ProductTab>
           fitWidth: true,
           rowHeight: vehicle ? 102 : 64,
           columnWidths: vehicle
-              ? const [70, 160, 210, 120, 120, 120, 70, 56]
+              ? const [70, 200, 210, 120, 120, 120, 70, 56]
               : const [140, 240, 100, 120, 150, 130, 64],
           columns: vehicle
               ? const [
@@ -393,7 +395,7 @@ class _ProductTabState extends State<ProductTab>
               cells: vehicle
                   ? [
                       DataCell(Text('#${row['IdXe']}')),
-                      DataCell(Text('${row['TenXe'] ?? ''}')),
+                      DataCell(Text(ProductListReport.vehicleTitle(row))),
                       DataCell(_vehicleIdentity(row)),
                       DataCell(Text(money(row['GiaNhap']))),
                       DataCell(Text(money(row['TongChiPhi'] ?? 0))),

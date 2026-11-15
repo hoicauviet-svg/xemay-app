@@ -184,6 +184,21 @@ class MongoInventoryRepository implements InventoryRepository {
           );
         }
       }
+      final brandIds = {
+        for (final row in rows)
+          if (row['IdHangXe'] != null) row['IdHangXe'],
+      };
+      final brands = brandIds.isEmpty
+          ? <dynamic, String>{}
+          : {
+              for (final brand in await _db.collection('HangXe').find({
+                'IdHangXe': {r'$in': brandIds.toList()},
+              }).toList())
+                brand['IdHangXe']: '${brand['TenHang'] ?? ''}'.trim(),
+            };
+      for (final row in rows) {
+        row['TenHang'] = brands[row['IdHangXe']] ?? '';
+      }
     } else if (rows.isNotEmpty && view == InventorySection.parts) {
       final ids = rows.map((r) => r['IdSanPham']).toList();
       final receiptCosts = <dynamic, num>{};

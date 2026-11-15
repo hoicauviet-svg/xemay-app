@@ -1048,6 +1048,7 @@ class ReportCalculator {
           p['IdCamDo'],
           p['NgayVay'],
           customers['${p['IdKhachHang']}']?['TenKhachHang'],
+          address(customers['${p['IdKhachHang']}']),
           p['TaiSanTheChap'],
           p['NgayHan'],
           p['SoTienVay'],
@@ -1407,6 +1408,7 @@ class ReportCalculator {
           ReportColumn('Mã', width: 70),
           ReportColumn('Ngày vay', width: 110),
           ReportColumn('Khách hàng', width: 180),
+          ReportColumn('Địa chỉ', width: 220),
           ReportColumn('Tài sản', width: 220),
           ReportColumn('Ngày hạn', width: 110),
           ReportColumn('Tiền vay', money: true),
@@ -1416,9 +1418,9 @@ class ReportCalculator {
         rows: _sortVouchers(pawnDebtRows),
         totals: {
           'Phiếu đang cầm': activePawns.length,
-          'Tiền vay': _sumValues(pawnDebtRows.map((r) => r[5])),
-          'Gốc đã thu': _sumValues(pawnDebtRows.map((r) => r[6])),
-          'Còn nợ': _sumValues(pawnDebtRows.map((r) => r[7])),
+          'Tiền vay': _sumValues(pawnDebtRows.map((r) => r[6])),
+          'Gốc đã thu': _sumValues(pawnDebtRows.map((r) => r[7])),
+          'Còn nợ': _sumValues(pawnDebtRows.map((r) => r[8])),
         },
         notes: const [
           'Dư nợ hiện tại của các phiếu đang cầm, không gồm lãi dự tính.',
