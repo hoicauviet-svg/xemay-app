@@ -451,8 +451,20 @@ ngày và `{"$oid": "..."}` cho ObjectId; nút **Chèn mẫu** và **Định d�
 ví dụ. Mỗi lần chạy được lưu vào `_fix_history`; nên **Sao lưu dữ liệu** ở tab
 MongoDB trước khi thực thi vì không thể hoàn tác.
 
-Phần **Đơn hàng bị kẹt** ngay trên ô lệnh có nút **Quét đơn kẹt** (chỉ đọc) để
-tìm kế hoạch sửa/xóa dở dang, khóa `SuaXoaDangLuu` còn sót và header không khớp
-sổ nợ. Nút **Sửa tất cả** yêu cầu xác nhận, hoàn tất kế hoạch theo đúng cơ chế
-của ứng dụng, giải phóng khóa và cập nhật header hợp lệ; kế hoạch xóa đơn dở
-dang không tự hoàn tất mà phải dùng **Tiếp tục xử lý**.
+Đơn kẹt được xử lý bằng một **file lệnh JSON** đưa vào đúng ô lệnh, không có nút
+riêng. File mẫu `tool/fix_don_hang_ket.json`:
+
+```json
+{
+  "description": "Quét và sửa đơn hàng bị kẹt",
+  "select": {"command": "stuck-orders"},
+  "apply": {"command": "repair-stuck-orders"}
+}
+```
+
+Bấm **Nhập từ tệp** để nạp file (hoặc dán nội dung), bấm **Kiểm tra** để chạy
+phần `select` (chỉ đọc, liệt kê kế hoạch sửa/xóa dở dang, khóa `SuaXoaDangLuu`
+còn sót, header lệch sổ nợ), rồi bấm **Thực thi** để chạy phần `apply`: hoàn tất
+kế hoạch theo đúng cơ chế của ứng dụng, giải phóng khóa và cập nhật header hợp
+lệ. Kế hoạch xóa đơn dở dang không tự hoàn tất mà phải dùng **Tiếp tục xử lý**.
+File không chứa Id cụ thể nên dùng được cho dữ liệu của từng máy khách.

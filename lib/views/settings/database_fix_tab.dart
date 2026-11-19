@@ -33,6 +33,12 @@ const _deleteTemplate = '''[
   }
 ]''';
 
+const _stuckTemplate = '''{
+  "description": "Quét và sửa đơn kẹt",
+  "select": {"command": "stuck-orders"},
+  "apply": {"command": "repair-stuck-orders"}
+}''';
+
 const _insertTemplate = '''[
   {
     "collection": "TraNo",
@@ -68,8 +74,6 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
   DatabaseFixRun? _run;
   StuckOrderScan? _stuckScan;
   StuckOrderRepairRun? _stuckRun;
-  bool _stuckBusy = false;
-  String? _stuckError;
 
   @override
   void dispose() {
@@ -114,11 +118,20 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
     if (_busy) return;
     final plan = _parse();
     if (plan == null) return;
+    if (plan.isStuckOrders) {
+      await _previewStuck();
+      if (mounted && plan.description != null) {
+        setState(() => _info = plan.description);
+      }
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
       _info = null;
       _run = null;
+      _stuckScan = null;
+      _stuckRun = null;
     });
     final runner = _runner();
     try {
@@ -139,11 +152,17 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
     if (_busy) return;
     final plan = _parse();
     if (plan == null) return;
+    if (plan.isStuckOrders) {
+      await _executeStuck();
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
       _info = null;
       _run = null;
+      _stuckScan = null;
+      _stuckRun = null;
     });
     final runner = _runner();
     try {
@@ -178,11 +197,14 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
   StuckOrderRunner _stuckRunner() =>
       widget.stuckRunnerFactory?.call() ?? StuckOrderRepair.local();
 
-  Future<void> _scanStuck() async {
-    if (_stuckBusy) return;
+  Future<void> _previewStuck() async {
     setState(() {
-      _stuckBusy = true;
-      _stuckError = null;
+      _busy = true;
+      _error = null;
+      _info = null;
+      _preview = null;
+      _run = null;
+      _stuckScan = null;
       _stuckRun = null;
     });
     final runner = _stuckRunner();
@@ -191,25 +213,44 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
       if (!mounted) return;
       setState(() => _stuckScan = scan);
     } catch (error) {
-      if (mounted) setState(() => _stuckError = 'Chưa quét được: $error');
+      if (mounted) setState(() => _error = 'Chưa quét được: $error');
     } finally {
       await runner.close();
-      if (mounted) setState(() => _stuckBusy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _fixStuck() async {
-    final scan = _stuckScan;
-    if (_stuckBusy || scan == null || !scan.hasFixable) return;
-    final confirmed = await _confirmStuck(scan);
-    if (confirmed != true || !mounted) return;
+  Future<void> _executeStuck() async {
     setState(() {
-      _stuckBusy = true;
-      _stuckError = null;
+      _busy = true;
+      _error = null;
+      _info = null;
+      _preview = null;
+      _run = null;
+      _stuckScan = null;
       _stuckRun = null;
     });
     final runner = _stuckRunner();
     try {
+      final scan = await runner.scan();
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _stuckScan = scan;
+      });
+      if (!scan.hasFixable) {
+        if (mounted) {
+          setState(
+            () => _info = scan.issues.isEmpty
+                ? 'Không phát hiện đơn kẹt.'
+                : 'Có đơn cần xử lý thủ công; xem danh sách bên dưới.',
+          );
+        }
+        return;
+      }
+      final confirmed = await _confirmStuck(scan);
+      if (confirmed != true || !mounted) return;
+      setState(() => _busy = true);
       final run = await runner.repair();
       if (!mounted) return;
       setState(() {
@@ -217,10 +258,10 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
         _stuckScan = run.scan;
       });
     } catch (error) {
-      if (mounted) setState(() => _stuckError = 'Chưa sửa được: $error');
+      if (mounted) setState(() => _error = 'Chưa sửa được: $error');
     } finally {
       await runner.close();
-      if (mounted) setState(() => _stuckBusy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -229,7 +270,7 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sửa đơn kẹt?'),
+        title: const Text('Thực thi sửa đơn kẹt?'),
         content: SizedBox(
           width: 540,
           child: SingleChildScrollView(
@@ -238,7 +279,8 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sẽ sửa ${fixable.length} đơn trên $_target và không thể hoàn tác. Hãy sao lưu dữ liệu trước khi tiếp tục.',
+                  'Sẽ sửa ${fixable.length} đơn trên $_target và không thể hoàn tác. '
+                  'Hãy sao lưu dữ liệu trước khi tiếp tục.',
                   style: const TextStyle(color: Color(0xFFB5473D)),
                 ),
                 const SizedBox(height: 12),
@@ -263,7 +305,7 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
           FilledButton(
             key: const ValueKey('stuck-confirm'),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sửa đơn kẹt'),
+            child: const Text('Thực thi'),
           ),
         ],
       ),
@@ -392,6 +434,14 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
                 subtitle: const Text('insert với ngày \$date'),
                 onTap: () => Navigator.pop(context, _insertTemplate),
               ),
+              ListTile(
+                leading: const Icon(Icons.health_and_safety_outlined),
+                title: const Text('Quét và sửa đơn kẹt'),
+                subtitle: const Text(
+                  'select stuck-orders + apply repair-stuck-orders',
+                ),
+                onTap: () => Navigator.pop(context, _stuckTemplate),
+              ),
             ],
           ),
         ),
@@ -474,6 +524,11 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
                   'Lệnh chạy lần lượt và dừng ở lỗi đầu tiên; không phải transaction nên lệnh many có thể áp dụng một phần. Kết quả được lưu vào _fix_history. Không sửa được _sync_* hoặc _fix_history.',
                   style: TextStyle(color: Color(0xFF6E7D83)),
                 ),
+                SizedBox(height: 12),
+                Text(
+                  'File quét đơn kẹt dùng lệnh: {"select":{"command":"stuck-orders"},"apply":{"command":"repair-stuck-orders"}}. Bấm Kiểm tra để xem danh sách, Thực thi để sửa.',
+                  style: TextStyle(color: Color(0xFF176455)),
+                ),
               ],
             ),
           ),
@@ -495,63 +550,6 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
       style: TextStyle(
         color: error ? const Color(0xFFB5473D) : const Color(0xFF176455),
       ),
-    ),
-  );
-
-  Widget _stuckPanel() => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF2F7F5),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xFFD9E7E1)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: const [
-            Icon(Icons.health_and_safety_outlined, color: Color(0xFF176455)),
-            SizedBox(width: 8),
-            Text(
-              'Đơn hàng bị kẹt',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Quét kế hoạch sửa/xóa dở, khóa còn sót và header lệch sổ nợ. '
-          'Chỉ sửa dữ liệu, không xóa đơn.',
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              key: const ValueKey('stuck-scan'),
-              onPressed: _stuckBusy ? null : _scanStuck,
-              icon: const Icon(Icons.troubleshoot),
-              label: const Text('Quét đơn kẹt'),
-            ),
-            FilledButton.icon(
-              key: const ValueKey('stuck-fix'),
-              onPressed: !_stuckBusy && (_stuckScan?.hasFixable ?? false)
-                  ? _fixStuck
-                  : null,
-              icon: const Icon(Icons.build_outlined),
-              label: const Text('Sửa tất cả'),
-            ),
-          ],
-        ),
-        if (_stuckBusy) ...[
-          const SizedBox(height: 12),
-          const LinearProgressIndicator(),
-        ],
-        if (_stuckError != null) _message(_stuckError!, error: true),
-        if (_stuckScan != null) _stuckScanView(_stuckScan!),
-        if (_stuckRun != null) _stuckRunView(_stuckRun!),
-      ],
     ),
   );
 
@@ -843,10 +841,6 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
     child: FormSection(
       title: null,
       children: [
-        _stuckPanel(),
-        const SizedBox(height: 20),
-        const Divider(),
-        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -958,6 +952,8 @@ class _DatabaseFixTabState extends State<DatabaseFixTab> {
         ),
         if (_preview != null) _previewView(_preview!),
         if (_run != null) _runView(_run!),
+        if (_stuckScan != null) _stuckScanView(_stuckScan!),
+        if (_stuckRun != null) _stuckRunView(_stuckRun!),
       ],
     ),
   );

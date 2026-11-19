@@ -1,0 +1,25 @@
+{
+  "description": "Quét và sửa đơn hàng bị kẹt: kế hoạch sửa/xóa dở dang, khóa còn sót, header lệch sổ nợ.",
+  "select": {
+    "command": "stuck-orders",
+    "description": "Đọc và liệt kê các đơn kẹt; không ghi dữ liệu.",
+    "conditions": [
+      {
+        "collection": "_record_changes",
+        "where": {"Kind": "order", "State": {"$in": ["pending", "preparing"]}}
+      },
+      {
+        "collection": "HoaDonBan/SoNo",
+        "where": {"SuaXoaDangLuu": {"$exists": true}}
+      },
+      {
+        "collection": "HoaDonBan",
+        "where": {"PhienBanBanHang": 3}
+      }
+    ]
+  },
+  "apply": {
+    "command": "repair-stuck-orders",
+    "description": "Hoàn tất kế hoạch, giải phóng khóa, cập nhật header hợp lệ."
+  }
+}

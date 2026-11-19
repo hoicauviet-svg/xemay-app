@@ -38,9 +38,19 @@ class DatabaseFixOperation {
 }
 
 class DatabaseFixPlan {
-  const DatabaseFixPlan({required this.operations, this.description});
+  const DatabaseFixPlan({
+    required this.operations,
+    this.description,
+    this.command,
+  });
   final List<DatabaseFixOperation> operations;
   final String? description;
+
+  /// Built-in command name, e.g. `stuck-orders`. A command plan has no
+  /// operations; the tab runs the matching scanner/repair instead.
+  final String? command;
+
+  bool get isStuckOrders => command == 'stuck-orders';
 }
 
 class DatabaseFixPreviewStep {
@@ -181,9 +191,27 @@ class DatabaseFixService implements DatabaseFixRunner {
     }
     String? description;
     dynamic rawOperations;
+    if (decoded is List && decoded.length == 1 && decoded.first is Map) {
+      final command = _command(decoded.first as Map);
+      if (command != null) {
+        return DatabaseFixPlan(
+          operations: const [],
+          description: _description(decoded.first as Map),
+          command: command,
+        );
+      }
+    }
     if (decoded is List) {
       rawOperations = decoded;
     } else if (decoded is Map) {
+      final command = _command(decoded);
+      if (command != null) {
+        return DatabaseFixPlan(
+          operations: const [],
+          description: _description(decoded),
+          command: command,
+        );
+      }
       if (decoded.containsKey('operations')) {
         rawOperations = decoded['operations'];
         final rawDescription = decoded['description'];
@@ -219,6 +247,61 @@ class DatabaseFixService implements DatabaseFixRunner {
         _operation(rawOperations[index], index + 1),
     ];
     return DatabaseFixPlan(operations: operations, description: description);
+  }
+
+  /// Recognizes the scan/repair command file:
+  /// `{"select": {"command": "stuck-orders"},
+  ///   "apply": {"command": "repair-stuck-orders"}}`
+  static String? _command(Map raw) {
+    String? name(dynamic value) => value is Map && value['command'] is String
+        ? value['command'] as String
+        : null;
+    final direct = raw['command'];
+    final select = name(raw['select']);
+    final apply = name(raw['apply']);
+    if (direct != null && direct != 'stuck-orders') {
+      throw DatabaseFixFormatException(
+        'Lệnh "$direct" không được hỗ trợ (chỉ có stuck-orders).',
+      );
+    }
+    if (select != null && select != 'stuck-orders') {
+      throw DatabaseFixFormatException(
+        'Lệnh select "$select" không được hỗ trợ (chỉ có stuck-orders).',
+      );
+    }
+    if (apply != null &&
+        apply != 'repair-stuck-orders' &&
+        apply != 'stuck-orders') {
+      throw DatabaseFixFormatException(
+        'Lệnh apply "$apply" không được hỗ trợ (chỉ có repair-stuck-orders).',
+      );
+    }
+    if (direct == 'stuck-orders' ||
+        select == 'stuck-orders' ||
+        apply == 'repair-stuck-orders' ||
+        apply == 'stuck-orders') {
+      return 'stuck-orders';
+    }
+    if (raw.containsKey('select') || raw.containsKey('apply')) {
+      throw const DatabaseFixFormatException(
+        'Cần "select.command": "stuck-orders" và/hoặc '
+        '"apply.command": "repair-stuck-orders".',
+      );
+    }
+    return null;
+  }
+
+  static String? _description(Map raw) {
+    final value = raw['description'];
+    if (value is String && value.trim().isNotEmpty) {
+      if (value.trim().length > 500) {
+        throw const DatabaseFixFormatException(
+          '"description" quá dài (tối đa 500 ký tự).',
+        );
+      }
+      return value.trim();
+    }
+    return null;
   }
 
   static (int, int) _position(String source, int? offset) {

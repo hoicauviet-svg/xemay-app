@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
@@ -106,6 +108,11 @@ const _script =
     '[{"collection":"HoaDonBan","filter":{"IdHoaDon":7},'
     '"update":{"\$set":{"SoTienKhachDua":0}}}]';
 
+const _stuckCommand =
+    '{"description":"Quét và sửa đơn kẹt",'
+    '"select":{"command":"stuck-orders"},'
+    '"apply":{"command":"repair-stuck-orders"}}';
+
 void main() {
   group('DatabaseFixService.parse', () {
     test('accepts a single operation object and normalizes values', () {
@@ -146,6 +153,34 @@ void main() {
       expect(plan.operations[0].many, isTrue);
       expect(plan.operations[1].action, DatabaseFixAction.insert);
       expect(plan.operations[1].insert!['SotienTra'], 1);
+    });
+
+    test('the shipped stuck-order command file is valid', () {
+      final plan = DatabaseFixService.parse(
+        File('tool/fix_don_hang_ket.json').readAsStringSync(),
+      );
+      expect(plan.isStuckOrders, isTrue);
+      expect(plan.description, contains('đơn hàng bị kẹt'));
+    });
+
+    test('accepts the stuck-orders command file', () {
+      final plan = DatabaseFixService.parse(_stuckCommand);
+      expect(plan.isStuckOrders, isTrue);
+      expect(plan.operations, isEmpty);
+      expect(plan.description, 'Quét và sửa đơn kẹt');
+      expect(
+        DatabaseFixService.parse('{"command":"stuck-orders"}').isStuckOrders,
+        isTrue,
+      );
+    });
+
+    test('rejects unknown select/apply commands', () {
+      expect(
+        () => DatabaseFixService.parse(
+          '{"select":{"command":"other"},"apply":{"command":"repair-stuck-orders"}}',
+        ),
+        throwsA(isA<DatabaseFixFormatException>()),
+      );
     });
 
     test('rejects an out-of-range \$date', () {
@@ -278,7 +313,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('stuck scan and repair flow asks for confirmation', (
+  testWidgets('stuck-orders command runs through preview and execute', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 1600);
@@ -296,16 +331,24 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('stuck-scan')));
+    await tester.ensureVisible(find.byKey(const ValueKey('fix-script')));
+    await tester.enterText(
+      find.byKey(const ValueKey('fix-script')),
+      _stuckCommand,
+    );
+    await tester.ensureVisible(find.byKey(const ValueKey('fix-preview')));
+    await tester.tap(find.byKey(const ValueKey('fix-preview')));
     await tester.pumpAndSettle();
     expect(stuck.scans, 1);
+    expect(stuck.repairs, 0);
     expect(find.textContaining('1 đơn cần xử lý'), findsOneWidget);
     expect(find.textContaining('#42 · Kế hoạch'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('stuck-fix')));
+    await tester.ensureVisible(find.byKey(const ValueKey('fix-execute')));
+    await tester.tap(find.byKey(const ValueKey('fix-execute')));
     await tester.pumpAndSettle();
-    expect(find.text('Sửa đơn kẹt?'), findsOneWidget);
-    expect(stuck.repairs, 0);
+    expect(stuck.scans, 2);
+    expect(find.text('Thực thi sửa đơn kẹt?'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('stuck-confirm')));
     await tester.pumpAndSettle();
     expect(stuck.repairs, 1);
