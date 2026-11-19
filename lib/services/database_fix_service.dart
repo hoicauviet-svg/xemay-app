@@ -766,15 +766,31 @@ class DatabaseFixService implements DatabaseFixRunner {
   static String? _writeError(WriteResult result) {
     if (result.isSuccess && !result.hasWriteErrors) return null;
     final error = result.writeError;
-    if (error != null) {
-      final code = error.code == null ? '' : ' (mã ${error.code})';
-      return '${error.errmsg ?? 'MongoDB từ chối lệnh ghi.'}$code';
+    Map<String, dynamic>? detail;
+    for (final response in result.serverResponses) {
+      final errors = response['writeErrors'];
+      if (errors is List && errors.isNotEmpty && errors.first is Map) {
+        detail = Map<String, dynamic>.from(errors.first as Map);
+        break;
+      }
+    }
+    final rawMessage = detail?['errmsg'] ?? error?.errmsg;
+    if (rawMessage is String) {
+      final code = detail?['code'] ?? error?.code;
+      final info = detail?['errInfo'];
+      final suffix = info == null ? '' : ' · ${_shortText(info)}';
+      return '$rawMessage${code == null ? '' : ' (mã $code)'}$suffix';
     }
     final concern = result.writeConcernError;
     if (concern != null) {
       return concern.errmsg ?? 'MongoDB chưa xác nhận lệnh ghi.';
     }
     return 'MongoDB chưa xác nhận lệnh ghi.';
+  }
+
+  static String _shortText(dynamic value) {
+    final text = '$value';
+    return text.length > 600 ? '${text.substring(0, 600)}…' : text;
   }
 
   static String _sample(Map<String, dynamic> document) {

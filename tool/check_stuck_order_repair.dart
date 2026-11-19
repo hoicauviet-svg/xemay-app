@@ -61,7 +61,11 @@ Future<void> main() async {
       'validationLevel': 'strict',
       'validationAction': 'error',
     });
-    await put('KhachHang', {'_id': 'c', 'IdKH': 1, 'TenKhachHang': 'Khách thử'});
+    await put('KhachHang', {
+      '_id': 'c',
+      'IdKH': 1,
+      'TenKhachHang': 'Khách thử',
+    });
 
     // 1. Half-applied payment delete: plan pending, header still old.
     final plan1 = ObjectId().oid;
@@ -119,18 +123,22 @@ Future<void> main() async {
         {'Collection': 'SoNo', 'Id': 'debt1'},
       ],
     });
-    await db.collection('HoaDonBan').updateOne(
-      {'_id': 'sale1'},
-      {
-        r'$set': {'SuaXoaDangLuu': plan1},
-      },
-    );
-    await db.collection('SoNo').updateOne(
-      {'_id': 'debt1'},
-      {
-        r'$set': {'SuaXoaDangLuu': plan1},
-      },
-    );
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'sale1'},
+          {
+            r'$set': {'SuaXoaDangLuu': plan1},
+          },
+        );
+    await db
+        .collection('SoNo')
+        .updateOne(
+          {'_id': 'debt1'},
+          {
+            r'$set': {'SuaXoaDangLuu': plan1},
+          },
+        );
 
     // 2. Header no longer matches the debt book, without a plan.
     await put(
@@ -191,12 +199,14 @@ Future<void> main() async {
         {'Collection': 'HoaDonBan', 'Id': 'sale3'},
       ],
     });
-    await db.collection('HoaDonBan').updateOne(
-      {'_id': 'sale3'},
-      {
-        r'$set': {'SuaXoaDangLuu': plan3},
-      },
-    );
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'sale3'},
+          {
+            r'$set': {'SuaXoaDangLuu': plan3},
+          },
+        );
 
     // 4. A stale lock with no plan.
     await put(
@@ -217,12 +227,14 @@ Future<void> main() async {
       'SoTienDaTra': 10000000,
       'SoTienConNo': 0,
     });
-    await db.collection('HoaDonBan').updateOne(
-      {'_id': 'sale4'},
-      {
-        r'$set': {'SuaXoaDangLuu': 'orphan-lock'},
-      },
-    );
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'sale4'},
+          {
+            r'$set': {'SuaXoaDangLuu': 'orphan-lock'},
+          },
+        );
 
     final scan = await service.scan();
     check(
@@ -295,6 +307,127 @@ Future<void> main() async {
     check(
       await db.collection('_fix_history').count() == 1,
       'Lần sửa được ghi vào _fix_history',
+    );
+
+    // 5. A document created before the validator may hold integral doubles.
+    //    MongoDB rejects the whole document unless the update normalizes them.
+    final plan5 = ObjectId().oid;
+    await db.collection('HoaDonBan').insertOne({
+      '_id': 'sale5',
+      'IdHoaDon': 5.0,
+      'IdKH': 1.0,
+      'IdSoNo': 5,
+      'TongTienHang': 10000000.0,
+      'GiamGia': 0.0,
+      'TongThanhToan': 10000000.0,
+      'SoTienKhachDua': 10020000.0,
+      'SoTienDaTra': 10000000.0,
+      'SoTienConNo': 0.0,
+      'TienThua': 20000.0,
+      'PhienBanBanHang': 3,
+      'PhienBanNgayCongNo': 1,
+      'MaYeuCauLuu': 'req-5',
+      'TrangThaiLuu': 'da_luu',
+      'NgayMua': sale,
+      'NgayHen': due,
+      'NgayTinhLai': sale,
+    }, bypassDocumentValidation: true);
+    await put('SoNo', {
+      '_id': 'debt5',
+      'IdSoNo': 5,
+      'IdHoaDon': 5,
+      'SoTienDaTra': 0,
+      'SoTienConNo': 10000000,
+    });
+    await put('_record_changes', {
+      '_id': plan5,
+      'Kind': 'order',
+      'Parent': 5,
+      'State': 'pending',
+      'Date': DateTime.now().toUtc(),
+      'DeleteParent': false,
+      'Operations': [
+        {
+          'Collection': 'SoNo',
+          'Id': 'debt5',
+          'Fields': {'SoTienDaTra': 0, 'SoTienConNo': 10000000},
+          'Unset': <String>[],
+        },
+        {
+          'Collection': 'HoaDonBan',
+          'Id': 'sale5',
+          'Fields': {
+            'SoTienDaTra': 0,
+            'SoTienConNo': 10000000,
+            'SoTienKhachDua': 20000,
+          },
+          'Unset': <String>[],
+        },
+      ],
+      'Locks': [
+        {'Collection': 'HoaDonBan', 'Id': 'sale5'},
+        {'Collection': 'SoNo', 'Id': 'debt5'},
+      ],
+    });
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'sale5'},
+          {
+            r'$set': {'SuaXoaDangLuu': plan5},
+          },
+        );
+    await db
+        .collection('SoNo')
+        .updateOne(
+          {'_id': 'debt5'},
+          {
+            r'$set': {'SuaXoaDangLuu': plan5},
+          },
+        );
+    final scan5 = await service.scan();
+    final issue5 = scan5.issues.where((item) => item.orderId == 5).toList();
+    check(
+      issue5.length == 1 && issue5.single.fixable,
+      'Đơn có trường kiểu double vẫn được nhận là sửa được',
+    );
+    final run5 = await service.repair();
+    check(
+      run5.results.any(
+        (result) => result.orderId == 5 && result.ok && result.fixed,
+      ),
+      'Sửa được đơn có trường tiền/Id kiểu double',
+    );
+    final fixed5 = await get('HoaDonBan', 'sale5');
+    check(
+      fixed5['TongTienHang'] is int &&
+          fixed5['GiamGia'] is int &&
+          fixed5['TongThanhToan'] is int &&
+          fixed5['SoTienDaTra'] is int &&
+          fixed5['SoTienConNo'] is int &&
+          fixed5['SoTienKhachDua'] is int &&
+          fixed5['TienThua'] is int &&
+          fixed5['IdKH'] is int &&
+          fixed5['IdHoaDon'] is int,
+      'Các trường validator được chuẩn hóa từ double sang int',
+    );
+    check(
+      fixed5['SoTienDaTra'] == 0 &&
+          fixed5['SoTienConNo'] == 10000000 &&
+          fixed5['SoTienKhachDua'] == 0 &&
+          fixed5['TienThua'] == 0,
+      'Header sau chuẩn hóa vẫn đúng số liệu',
+    );
+    final finished5 = await get('_record_changes', plan5);
+    check(
+      finished5['State'] == 'done' &&
+          finished5['Released'] == true &&
+          fixed5['SuaXoaDangLuu'] == null,
+      'Kế hoạch double được hoàn tất và giải phóng khóa',
+    );
+    check(
+      await db.collection('_fix_history').count() == 2,
+      'Lần sửa double được ghi lịch sử',
     );
     stdout.writeln('$checks checks passed.');
   } finally {

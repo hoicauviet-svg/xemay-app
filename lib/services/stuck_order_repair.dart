@@ -67,6 +67,13 @@ abstract class StuckOrderRunner {
   Future<void> close();
 }
 
+class StuckOrderException implements Exception {
+  const StuckOrderException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 /// Finds and repairs orders blocked by a half-applied record change: pending
 /// plans, stale `SuaXoaDangLuu` locks and a header that no longer matches the
 /// debt book. New sale headers must satisfy the same rules as the deployed
@@ -161,11 +168,11 @@ class StuckOrderRepair implements StuckOrderRunner {
     final header = context.header;
     if (header == null &&
         (context.planFixes.isNotEmpty || context.mismatch != null)) {
-      throw StateError('Không tìm thấy đơn hàng.');
+      throw const StuckOrderException('Không tìm thấy đơn hàng.');
     }
     var changed = false;
     for (final fix in context.planFixes) {
-      await db
+      final patched = await db
           .collection('_record_changes')
           .updateOne(
             {'_id': fix.planId},
@@ -173,6 +180,11 @@ class StuckOrderRepair implements StuckOrderRunner {
               r'$set': {'Operations.${fix.index}.Fields': fix.fields},
             },
           );
+      if (!patched.isSuccess || patched.hasWriteErrors) {
+        throw StuckOrderException(
+          'Không sửa được kế hoạch: ${_writeError(patched)}',
+        );
+      }
       final write = await db
           .collection('HoaDonBan')
           .updateOne(
@@ -184,9 +196,8 @@ class StuckOrderRepair implements StuckOrderRunner {
             },
           );
       if (!write.isSuccess || write.hasWriteErrors) {
-        final error = write.writeError;
-        throw StateError(
-          'MongoDB từ chối cập nhật header: ${error?.errmsg ?? 'không xác nhận'}.',
+        throw StuckOrderException(
+          'MongoDB từ chối cập nhật header: ${_writeError(write)}',
         );
       }
       changed = true;
@@ -203,9 +214,8 @@ class StuckOrderRepair implements StuckOrderRunner {
             {r'$set': context.mismatch!.fields},
           );
       if (!write.isSuccess || write.hasWriteErrors) {
-        final error = write.writeError;
-        throw StateError(
-          'MongoDB từ chối cập nhật header: ${error?.errmsg ?? 'không xác nhận'}.',
+        throw StuckOrderException(
+          'MongoDB từ chối cập nhật header: ${_writeError(write)}',
         );
       }
       changed = true;
@@ -220,7 +230,9 @@ class StuckOrderRepair implements StuckOrderRunner {
             },
           );
       if (!write.isSuccess || write.hasWriteErrors) {
-        throw StateError('Không giải phóng được khóa ${lock.collection}.');
+        throw StuckOrderException(
+          'Không giải phóng được khóa ${lock.collection}: ${_writeError(write)}',
+        );
       }
       changed = true;
     }
@@ -245,7 +257,9 @@ class StuckOrderRepair implements StuckOrderRunner {
       'SuaXoaDangLuu': {r'$exists': true},
     });
     if (plans > 0 || locked > 0) {
-      throw StateError('Vẫn còn kế hoạch hoặc khóa sau khi sửa.');
+      throw const StuckOrderException(
+        'Vẫn còn kế hoạch hoặc khóa sau khi sửa.',
+      );
     }
     return (changed, 'Đã sửa đơn #${context.orderId}.');
   }
@@ -583,7 +597,17 @@ class StuckOrderRepair implements StuckOrderRunner {
     for (final key in unset) {
       candidate.remove(key);
     }
-    if (!_headerValid(candidate)) return null;
+    final normalized = _normalize(candidate);
+    if (normalized == null) return null;
+    result.addAll(normalized);
+    for (final key in unset) {
+      result.remove(key);
+    }
+    final finalCandidate = <String, dynamic>{...header, ...result};
+    for (final key in unset) {
+      finalCandidate.remove(key);
+    }
+    if (!_headerValid(finalCandidate)) return null;
     return _HeaderFix(result, unset);
   }
 
@@ -598,6 +622,10 @@ class StuckOrderRepair implements StuckOrderRunner {
     if (cash == null) return null;
     result.addAll(cash);
     if (!_fillDates(header, result, due)) return null;
+    final normalized = _normalize({...header, ...result});
+    if (normalized == null) return null;
+    result.addAll(normalized);
+    if (!_headerValid({...header, ...result})) return null;
     return _HeaderFix(result, const []);
   }
 
@@ -650,8 +678,72 @@ class StuckOrderRepair implements StuckOrderRunner {
     return true;
   }
 
+  /// MongoDB's schema requires int/long for money and ids. Documents created
+  /// before the validator may hold integral doubles; normalize them.
+  Map<String, dynamic>? _normalize(Map<String, dynamic> candidate) {
+    final result = <String, dynamic>{};
+    for (final key in const [
+      'IdHoaDon',
+      'IdKH',
+      'TongTienHang',
+      'GiamGia',
+      'TongThanhToan',
+      'SoTienKhachDua',
+      'SoTienDaTra',
+      'SoTienConNo',
+      'TienThua',
+    ]) {
+      final value = candidate[key];
+      if (value == null || value is int) continue;
+      if (value is double &&
+          value.isFinite &&
+          value == value.truncateToDouble() &&
+          value.abs() <= 9007199254740991) {
+        result[key] = value.toInt();
+      } else {
+        return null;
+      }
+    }
+    for (final key in const ['NgayMua', 'NgayHen', 'NgayTinhLai']) {
+      final value = candidate[key];
+      if (value is String) {
+        final parsed = DateTime.tryParse(value);
+        if (parsed == null) return null;
+        result[key] = parsed.toUtc();
+      } else if (value != null && value is! DateTime) {
+        return null;
+      }
+    }
+    return result;
+  }
+
+  String _writeError(WriteResult result) {
+    final error = result.writeError;
+    Map<String, dynamic>? detail;
+    for (final response in result.serverResponses) {
+      final errors = response['writeErrors'];
+      if (errors is List && errors.isNotEmpty && errors.first is Map) {
+        detail = Map<String, dynamic>.from(errors.first as Map);
+        break;
+      }
+    }
+    final rawMessage = detail?['errmsg'] ?? error?.errmsg;
+    final message = rawMessage is String
+        ? rawMessage
+        : 'MongoDB không xác nhận lệnh ghi.';
+    final code = detail?['code'] ?? error?.code;
+    final info = detail?['errInfo'];
+    final suffix = info == null ? '' : ' · ${_short(info)}';
+    return '$message${code == null ? '' : ' (mã $code)'}$suffix';
+  }
+
+  String _short(dynamic value) {
+    final text = '$value';
+    return text.length > 600 ? '${text.substring(0, 600)}…' : text;
+  }
+
   bool _headerValid(Map<String, dynamic> doc) {
-    if (doc['IdHoaDon'] is! num) return false;
+    if (doc['IdHoaDon'] is! int) return false;
     if (doc['PhienBanBanHang'] == 3) {
       final goods = doc['TongTienHang'],
           discount = doc['GiamGia'],
@@ -668,7 +760,7 @@ class StuckOrderRepair implements StuckOrderRunner {
         paid,
         due,
         change,
-      ].any((value) => value is! num || value < 0)) {
+      ].any((value) => value is! int || value < 0)) {
         return false;
       }
       if (total != goods - discount) return false;
@@ -681,7 +773,7 @@ class StuckOrderRepair implements StuckOrderRunner {
     }
     if (doc['PhienBanNgayCongNo'] == 1) {
       final due = doc['SoTienConNo'];
-      if (due is! num) return false;
+      if (due is! int) return false;
       if (due > 0) {
         final sale = doc['NgayMua'],
             dueDate = doc['NgayHen'],
@@ -692,7 +784,7 @@ class StuckOrderRepair implements StuckOrderRunner {
           return false;
         }
         if (dueDate.isBefore(sale) || interest.isBefore(sale)) return false;
-        if (doc['IdKH'] is! num) return false;
+        if (doc['IdKH'] is! int) return false;
       }
     }
     for (final key in const [
@@ -704,7 +796,7 @@ class StuckOrderRepair implements StuckOrderRunner {
       'SoTienConNo',
       'TienThua',
     ]) {
-      if (doc.containsKey(key) && (doc[key] is! num || (doc[key] as num) < 0)) {
+      if (doc.containsKey(key) && (doc[key] is! int || (doc[key] as int) < 0)) {
         return false;
       }
     }
