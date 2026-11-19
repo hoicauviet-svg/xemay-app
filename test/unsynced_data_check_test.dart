@@ -107,9 +107,23 @@ void main() {
       find.text('Có dữ liệu chưa đồng bộ. Hãy đồng bộ với MongoDB Cloud.'),
       findsOneWidget,
     );
-    await tester.tap(find.widgetWithText(SnackBarAction, 'Đồng bộ'));
+    await tester.tap(find.widgetWithText(TextButton, 'Đồng bộ'));
     await tester.pumpAndSettle();
     expect(opened, isTrue);
+    expect(
+      find.text('Có dữ liệu chưa đồng bộ. Hãy đồng bộ với MongoDB Cloud.'),
+      findsNothing,
+    );
+    opened = false;
+    await tester.tap(find.text('Hiện toast'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Bỏ qua'));
+    await tester.pumpAndSettle();
+    expect(opened, isFalse);
+    expect(
+      find.text('Có dữ liệu chưa đồng bộ. Hãy đồng bộ với MongoDB Cloud.'),
+      findsNothing,
+    );
   });
 
   test('staged comparison starts the sync immediately', () async {
@@ -137,6 +151,26 @@ void main() {
     expect(repo.syncSource, 'mongodb://local/XM');
     expect(repo.syncTarget, 'mongodb://cloud/XM');
     expect(lines, contains('Đã đối chiếu dữ liệu'));
+  });
+
+  testWidgets('sync progress bar can be dismissed while active', (
+    tester,
+  ) async {
+    var dismissed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SyncProgressBar(
+            active: true,
+            message: 'Đang đồng bộ dữ liệu…',
+            onClose: () => dismissed = true,
+          ),
+        ),
+      ),
+    );
+    expect(find.widgetWithText(TextButton, 'Bỏ qua'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Bỏ qua'));
+    expect(dismissed, isTrue);
   });
 
   testWidgets('progress bar is the last item and shows the current step', (

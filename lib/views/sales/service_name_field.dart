@@ -55,7 +55,7 @@ class _ServiceNameFieldState extends State<ServiceNameField> {
   Widget build(BuildContext context) => RawAutocomplete<ServiceItem>(
     textEditingController: widget.controller,
     focusNode: _focus,
-    displayStringForOption: (item) => item.name,
+    displayStringForOption: (item) => cleanName(item.name),
     optionsBuilder: (value) => _search(value.text),
     onSelected: widget.onSelected,
     fieldViewBuilder: (context, text, focus, onSubmit) => TextField(

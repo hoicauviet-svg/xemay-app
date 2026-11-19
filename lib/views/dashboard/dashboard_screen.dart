@@ -93,6 +93,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _initialSettingsTab = 0;
   bool _syncing = false;
   bool _syncFailed = false;
+  bool _syncDismissed = false;
   String? _syncMessage;
   @override
   void initState() {
@@ -149,6 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _syncing = true;
       _syncFailed = false;
+      _syncDismissed = false;
       _syncMessage = 'Đang đồng bộ dữ liệu…';
     });
     final repository =
@@ -156,7 +158,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         NativeDatabaseSettingsRepository();
     final controller = DatabaseSettingsController(repository);
     void listen() {
-      if (!mounted || controller.progress.isEmpty) return;
+      if (!mounted || _syncDismissed || controller.progress.isEmpty) return;
       setState(() => _syncMessage = controller.progress.last);
     }
 
@@ -173,19 +175,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _syncing = false;
         _syncFailed = error != null;
-        _syncMessage = error ?? 'Đã đồng bộ dữ liệu với MongoDB Cloud.';
+        if (!_syncDismissed) {
+          _syncMessage = error ?? 'Đã đồng bộ dữ liệu với MongoDB Cloud.';
+        }
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _syncing = false;
         _syncFailed = true;
-        _syncMessage = 'Chưa đồng bộ được. Kiểm tra kết nối và thử lại.';
+        if (!_syncDismissed) {
+          _syncMessage = 'Chưa đồng bộ được. Kiểm tra kết nối và thử lại.';
+        }
       });
     } finally {
       controller.removeListener(listen);
       controller.dispose();
     }
+  }
+
+  void _dismissSync() {
+    setState(() {
+      _syncDismissed = true;
+      _syncMessage = null;
+    });
   }
 
   void _createSalesController() {
@@ -301,7 +314,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   active: _syncing,
                   failed: _syncFailed,
                   message: _syncMessage!,
-                  onClose: () => setState(() => _syncMessage = null),
+                  onClose: _dismissSync,
                 ),
             ],
           ),

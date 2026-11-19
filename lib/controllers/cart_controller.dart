@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../core/formatters/inventory_formatters.dart';
 import '../models/services/service_models.dart';
 
 class CartItem {
@@ -31,12 +32,13 @@ class CartItem {
           : vehicle
           ? 'IdXe'
           : 'IdSanPham']}';
-  String get name =>
-      '${product[service
-              ? 'TenDichVu'
-              : vehicle
-              ? 'TenXe'
-              : 'TenSanPham'] ?? ''}';
+  String get name => cleanName(
+    product[service
+        ? 'TenDichVu'
+        : vehicle
+        ? 'TenXe'
+        : 'TenSanPham'],
+  );
 }
 
 /// Shared order draft; stock changes only after a future checkout.

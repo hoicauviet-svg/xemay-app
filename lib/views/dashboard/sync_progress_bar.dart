@@ -55,11 +55,11 @@ class SyncProgressBar extends StatelessWidget {
                         style: TextStyle(color: color, fontSize: 13),
                       ),
                     ),
-                    if (!active && onClose != null)
-                      IconButton(
-                        tooltip: 'Đóng',
+                    if (onClose != null)
+                      TextButton(
+                        key: const ValueKey('sync-dismiss'),
                         onPressed: onClose,
-                        icon: const Icon(Icons.close, size: 18),
+                        child: const Text('Bỏ qua'),
                       ),
                   ],
                 ),

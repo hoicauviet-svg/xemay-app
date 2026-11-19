@@ -505,10 +505,7 @@ class _SalesTabState extends State<SalesTab> {
                     SizedBox(
                       width: widths[i],
                       child: i == cells.length - 1
-                          ? Align(
-                              alignment: Alignment.center,
-                              child: cells[i],
-                            )
+                          ? Align(alignment: Alignment.center, child: cells[i])
                           : cells[i],
                     ),
                   ],
@@ -622,7 +619,7 @@ class _SalesTabState extends State<SalesTab> {
   }
 
   void _productNameChanged(_ProductRow row, String value) {
-    if (row.productKey != null && value.trim() != row.acceptedName) {
+    if (row.productKey != null && cleanName(value) != row.acceptedName) {
       final linked = _linkedProduct(row);
       if (linked != null) sale.cart.remove(linked);
       row.productKey = null;
@@ -648,10 +645,10 @@ class _SalesTabState extends State<SalesTab> {
 
   String? _unselectedProductError() {
     for (final row in _productRows) {
-      final typed = row.name.text.trim();
-      if (typed.isEmpty) continue;
-      final linked = _linkedProduct(row);
-      if (linked == null || typed != linked.name) {
+      if (row.name.text.trim().isEmpty) continue;
+      // Identity is the selected product key, not the text shown in the field.
+      // Editing the text clears the key in _productNameChanged.
+      if (row.productKey == null || _linkedProduct(row) == null) {
         return 'Chọn sản phẩm từ gợi ý.';
       }
     }
@@ -820,7 +817,7 @@ class _SalesTabState extends State<SalesTab> {
 
   void _serviceNameChanged(_ServiceRow row, String value) {
     final linked = _linkedService(row);
-    if (linked != null && value.trim() != linked.name) {
+    if (linked != null && cleanName(value) != linked.name) {
       sale.cart.remove(linked);
       row.serviceId = null;
     }

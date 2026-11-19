@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/formatters/inventory_formatters.dart';
 import '../../models/inventory/inventory_models.dart';
 import '../../models/repositories/inventory_repository.dart';
 
@@ -8,7 +9,7 @@ class ProductSuggestion {
   final Map<String, dynamic> row;
   final bool vehicle;
 
-  String get name => '${row[vehicle ? 'TenXe' : 'TenSanPham'] ?? ''}';
+  String get name => cleanName(row[vehicle ? 'TenXe' : 'TenSanPham']);
   String get cartKey =>
       '${vehicle ? 'xe' : 'pt'}-${row[vehicle ? 'IdXe' : 'IdSanPham']}';
 
