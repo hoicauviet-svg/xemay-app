@@ -8,6 +8,7 @@ import '../../models/repositories/database_settings_repository.dart';
 import '../../services/native_database_settings_repository.dart';
 import '../widgets/form_section.dart';
 import 'app_update_panel.dart';
+import 'database_fix_tab.dart';
 
 const _backupType = XTypeGroup(
   label: 'Bản sao lưu',
@@ -1120,7 +1121,7 @@ class _SettingsTabState extends State<SettingsTab> {
 
   @override
   Widget build(BuildContext context) => DefaultTabController(
-    length: 4,
+    length: 5,
     initialIndex: widget.initialTab,
     child: Container(
       decoration: BoxDecoration(
@@ -1138,6 +1139,7 @@ class _SettingsTabState extends State<SettingsTab> {
               Tab(text: 'SQL Server'),
               Tab(text: 'MongoDB Cloud'),
               Tab(text: 'Phiên bản'),
+              Tab(text: 'Sửa lỗi'),
             ],
           ),
           Expanded(
@@ -1147,6 +1149,7 @@ class _SettingsTabState extends State<SettingsTab> {
                 _sqlPage(),
                 _cloudPage(),
                 const AppUpdatePanel(),
+                const DatabaseFixTab(),
               ],
             ),
           ),

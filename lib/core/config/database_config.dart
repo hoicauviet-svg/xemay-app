@@ -21,4 +21,8 @@ abstract final class DatabaseConfig {
     _mongoUri = next;
     _changes.add(++revision);
   }
+
+  /// Asks every open screen to read the active database again, e.g. after a
+  /// repair script changed documents in place.
+  static void refresh() => _changes.add(++revision);
 }

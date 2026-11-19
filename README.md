@@ -438,3 +438,21 @@ xem trước bản in. Đơn nhiều mặt hàng tự chia trang và lặp tiêu
 
 Nếu lỗi tạo bản in sau khi đã lưu, nút In lại dùng mã đơn đã nhận, không lưu đơn
 lần nữa. **In hợp đồng mua bán** tạm khóa và ghi rõ chờ mẫu hợp đồng được cung cấp.
+
+### Sửa lỗi dữ liệu từ tab Cài đặt
+
+Tab **Sửa lỗi** trong Cài đặt cho phép dán trực tiếp hoặc **Nhập từ tệp**
+`.json`/`.txt` một kịch bản JSON gồm các lệnh `update`, `delete` hoặc `insert`
+chạy trên MongoDB đang dùng. Nút **Kiểm tra** chỉ đọc dữ liệu và hiển thị số bản
+ghi khớp cùng bản xem trước; nút **Thực thi** yêu cầu xác nhận rồi chạy lần lượt
+và dừng ở lỗi đầu tiên. Lệnh không được sửa/xóa toàn bộ collection và không được
+đụng tới `_sync_*`, `_fix_history`. Dùng `{"$date": "2026-11-19T00:00:00Z"}` cho
+ngày và `{"$oid": "..."}` cho ObjectId; nút **Chèn mẫu** và **Định dạng lệnh** có
+ví dụ. Mỗi lần chạy được lưu vào `_fix_history`; nên **Sao lưu dữ liệu** ở tab
+MongoDB trước khi thực thi vì không thể hoàn tác.
+
+Phần **Đơn hàng bị kẹt** ngay trên ô lệnh có nút **Quét đơn kẹt** (chỉ đọc) để
+tìm kế hoạch sửa/xóa dở dang, khóa `SuaXoaDangLuu` còn sót và header không khớp
+sổ nợ. Nút **Sửa tất cả** yêu cầu xác nhận, hoàn tất kế hoạch theo đúng cơ chế
+của ứng dụng, giải phóng khóa và cập nhật header hợp lệ; kế hoạch xóa đơn dở
+dang không tự hoàn tất mà phải dùng **Tiếp tục xử lý**.

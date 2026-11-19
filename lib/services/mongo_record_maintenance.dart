@@ -158,6 +158,52 @@ class MongoRecordMaintenance implements RecordMaintenance {
   }
 
   DateTime day(DateTime d) => DateTime.utc(d.year, d.month, d.day);
+
+  /// Cash handed over and change must follow the sale validator:
+  /// paid = min(cash, total) and change = cash - paid. When the recorded
+  /// payments no longer cover the sale there is no change to return.
+  Map<String, dynamic> _saleCash({
+    required num total,
+    required num paid,
+    required num change,
+  }) {
+    final nextChange = paid >= total ? change : 0;
+    return {'SoTienKhachDua': paid + nextChange, 'TienThua': nextChange};
+  }
+
+  /// New credit sales must carry debt dates; the sale validator rejects a
+  /// header without them or with dates before the sale date.
+  void _ensureDebtDates(
+    Map<String, dynamic> changes,
+    Map<String, dynamic> header,
+  ) {
+    if (header['PhienBanNgayCongNo'] != 1) return;
+    final due = changes['SoTienConNo'] ?? header['SoTienConNo'];
+    if (due is! num || due <= 0) return;
+    final sale = changes['NgayMua'] ?? header['NgayMua'];
+    if (sale is! DateTime) return;
+    final saleDay = day(sale);
+    DateTime? valid(dynamic value) {
+      if (value is! DateTime) return null;
+      final date = day(value);
+      return date.isBefore(saleDay) ? null : date;
+    }
+
+    final lastDay = DateTime.utc(saleDay.year, saleDay.month + 2, 0).day;
+    changes['NgayTinhLai'] =
+        valid(changes['NgayTinhLai']) ??
+        valid(header['NgayTinhLai']) ??
+        saleDay;
+    changes['NgayHen'] =
+        valid(changes['NgayHen']) ??
+        valid(header['NgayHen']) ??
+        DateTime.utc(
+          saleDay.year,
+          saleDay.month + 1,
+          saleDay.day > lastDay ? lastDay : saleDay.day,
+        );
+  }
+
   Future<RecordEditData> _read(RecordKind kind, int id) async {
     final s = specs[kind]!;
     final h = await db.collection(s.$1).findOne({s.$2: id});
@@ -1143,6 +1189,27 @@ class MongoRecordMaintenance implements RecordMaintenance {
       for (final key in ['NgayHen', 'NgayTinhLai']) {
         if (fields[key] is DateTime) changes[key] = day(fields[key]);
       }
+      if (h['PhienBanBanHang'] == 3) {
+        changes.addAll(
+          _saleCash(
+            total: total,
+            paid: paid,
+            change: number(h['TienThua'] ?? 0),
+          ),
+        );
+      }
+      if (h['PhienBanNgayCongNo'] == 1 &&
+          total - paid > 0 &&
+          changes['NgayMua'] is DateTime) {
+        final saleDay = changes['NgayMua'] as DateTime;
+        for (final key in ['NgayHen', 'NgayTinhLai']) {
+          final value = changes[key];
+          if (value is DateTime && value.isBefore(saleDay)) {
+            fail('Ngày hẹn và ngày tính lãi không được trước ngày bán.');
+          }
+        }
+      }
+      _ensureDebtDates(changes, h);
       operations.add(op('SoNo', debt['_id'], {'SoTienConNo': total - paid}));
     }
     operations.add(op(specs[kind]!.$1, h['_id'], changes));
@@ -1461,6 +1528,18 @@ class MongoRecordMaintenance implements RecordMaintenance {
     DateTime? nextAppointment,
   }) => _run(kind, parentId, requestId, (data, lock) async {
     final s = specs[kind]!, h = data.header;
+    if (kind == RecordKind.order && h['PhienBanNgayCongNo'] == 1) {
+      final sale = h['NgayMua'];
+      if (sale is DateTime) {
+        final saleDay = day(sale);
+        if (interestStart != null && day(interestStart).isBefore(saleDay)) {
+          fail('Ngày tính lãi không được trước ngày bán.');
+        }
+        if (nextAppointment != null && day(nextAppointment).isBefore(saleDay)) {
+          fail('Ngày hẹn không được trước ngày bán.');
+        }
+      }
+    }
     final found = data.payments
         .where(
           (p) =>
@@ -1569,8 +1648,13 @@ class MongoRecordMaintenance implements RecordMaintenance {
         ops.add(op('SoNo', balance['_id'], update));
         changes.addAll(update);
         if (h['PhienBanBanHang'] == 3) {
-          changes['SoTienKhachDua'] =
-              (update['SoTienDaTra'] as num) + (h['TienThua'] as num? ?? 0);
+          changes.addAll(
+            _saleCash(
+              total: number(h['TongThanhToan']),
+              paid: update['SoTienDaTra'] as num,
+              change: number(h['TienThua'] ?? 0),
+            ),
+          );
         }
       } else {
         changes.addAll(update);
@@ -1636,6 +1720,9 @@ class MongoRecordMaintenance implements RecordMaintenance {
       if (appointment is DateTime) {
         changes[kind == RecordKind.pawn ? 'NgayHan' : 'NgayHen'] = appointment;
       }
+    }
+    if (kind == RecordKind.order) {
+      _ensureDebtDates(changes, h);
     }
     if (edited == null) {
       ops.add(op(s.$3, old['_id'], null));

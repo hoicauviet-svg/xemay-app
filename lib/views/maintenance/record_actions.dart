@@ -87,6 +87,7 @@ class _RecordEditorState extends State<RecordEditor> {
   final _draft = <String, dynamic>{};
   List<Map<String, dynamic>> _lines = [];
   Map<String, dynamic>? _payment;
+  Map<String, dynamic>? _header;
   bool _loading = true, _saving = false, _locked = false;
   String? _error;
   String _request = ObjectId().oid;
@@ -137,6 +138,8 @@ class _RecordEditorState extends State<RecordEditor> {
           (p) => p['_id'] == widget.paymentId || p[idKey] == widget.paymentId,
         );
         _init(_payment!);
+        _header = data.header;
+        _prefillDebtDates();
       } else {
         _init(data.header);
         _lines = [
@@ -151,6 +154,33 @@ class _RecordEditorState extends State<RecordEditor> {
           _error = 'Không tải được thông tin phiếu. Đóng và mở lại để thử lại.';
         });
       }
+    }
+  }
+
+  /// A paid-in-full sale has no debt dates. If a payment is edited or deleted
+  /// the sale gains debt, so surface the dates the sale validator requires.
+  void _prefillDebtDates() {
+    final header = _header;
+    if (widget.kind != RecordKind.order ||
+        header == null ||
+        header['PhienBanNgayCongNo'] != 1) {
+      return;
+    }
+    final sale = header['NgayMua'];
+    if (sale is! DateTime) return;
+    final saleDay = DateTime.utc(sale.year, sale.month, sale.day);
+    if (header['NgayTinhLai'] is! DateTime) {
+      _dates.putIfAbsent('_InterestStart', () => saleDay);
+    }
+    if (header['NgayHen'] is! DateTime) {
+      _dates.putIfAbsent('_NextAppointment', () {
+        final lastDay = DateTime.utc(saleDay.year, saleDay.month + 2, 0).day;
+        return DateTime.utc(
+          saleDay.year,
+          saleDay.month + 1,
+          saleDay.day > lastDay ? lastDay : saleDay.day,
+        );
+      });
     }
   }
 
