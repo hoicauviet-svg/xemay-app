@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:xemay_app/models/maintenance/record_maintenance.dart';
+import 'package:xemay_app/services/change_history.dart';
 import 'package:xemay_app/services/mongo_record_maintenance.dart';
 
 const _ids = {
@@ -296,12 +297,30 @@ Future<void> main() async {
       'SoTienConNo': 0,
     });
     await addPayment(101, 'sale:a:payment', 10000000, sale);
+    final requestA = token();
     await service.payment(
       RecordKind.order,
       101,
       'sale:a:payment',
       null,
-      requestId: token(),
+      requestId: requestA,
+    );
+    final history = await get(
+      ChangeHistory.collection,
+      ChangeHistory.id(requestA),
+    );
+    check(
+      history['Action'] == 'paymentDelete' &&
+          history['Kind'] == 'order' &&
+          history['ParentId'] == 101 &&
+          history['RequestId'] == requestA &&
+          history['Machine'] is String,
+      'Lịch sử ghi phiếu trả nợ bị xóa cùng máy và mã yêu cầu',
+    );
+    check(
+      (history['Before'] as Map?)?['SoTienDaTra'] == 10000000 &&
+          (history['After'] as Map?)?['SoTienDaTra'] == 0,
+      'Lịch sử giữ trạng thái trước và sau khi xóa phiếu',
     );
     var header = await get('HoaDonBan', 'a');
     check(
@@ -492,7 +511,189 @@ Future<void> main() async {
       'Đơn cũ vẫn xóa phiếu bình thường, không thêm trường mới',
     );
 
-    // F. No pending plans or locks left behind.
+    // F. A lock left by an old or missing plan must not block deletion.
+    await put(
+      'HoaDonBan',
+      newSale(
+        id: 'f',
+        orderId: 106,
+        total: 10000000,
+        paid: 10000000,
+        cash: 10000000,
+        change: 0,
+        dueAmount: 0,
+        dueDate: due,
+        interestDate: sale,
+      ),
+    );
+    await put('SoNo', {
+      '_id': 'debt-f',
+      'IdSoNo': 106,
+      'IdHoaDon': 106,
+      'SoTienDaTra': 10000000,
+      'SoTienConNo': 0,
+    });
+    await addPayment(106, 'sale:f:payment', 10000000, sale);
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'f'},
+          {
+            r'$set': {'SuaXoaDangLuu': 'missing-payment-plan'},
+          },
+        );
+    await db
+        .collection('SoNo')
+        .updateOne(
+          {'_id': 'debt-f'},
+          {
+            r'$set': {'SuaXoaDangLuu': 'missing-payment-plan'},
+          },
+        );
+    await service.payment(
+      RecordKind.order,
+      106,
+      'sale:f:payment',
+      null,
+      requestId: token(),
+    );
+    header = await get('HoaDonBan', 'f');
+    check(
+      header['SoTienDaTra'] == 0 && header['SoTienConNo'] == 10000000,
+      'Khóa mồ côi không chặn xóa phiếu trả nợ',
+    );
+    check(
+      header['SuaXoaDangLuu'] == null &&
+          (await get('SoNo', 'debt-f'))['SuaXoaDangLuu'] == null,
+      'Khóa mồ côi được giải phóng sau khi xóa phiếu',
+    );
+
+    // G. An aborted plan can leave its old lock behind.
+    const abortedPlan = 'aborted-payment-plan';
+    await put(
+      'HoaDonBan',
+      newSale(
+        id: 'g',
+        orderId: 107,
+        total: 10000000,
+        paid: 10000000,
+        cash: 10000000,
+        change: 0,
+        dueAmount: 0,
+        dueDate: due,
+        interestDate: sale,
+      ),
+    );
+    await put('SoNo', {
+      '_id': 'debt-g',
+      'IdSoNo': 107,
+      'IdHoaDon': 107,
+      'SoTienDaTra': 10000000,
+      'SoTienConNo': 0,
+    });
+    await addPayment(107, 'sale:g:payment', 10000000, sale);
+    await put('_record_changes', {
+      '_id': abortedPlan,
+      'Kind': 'order',
+      'Parent': 107,
+      'State': 'aborted',
+      'Date': DateTime.now().toUtc(),
+    });
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'g'},
+          {
+            r'$set': {'SuaXoaDangLuu': abortedPlan},
+          },
+        );
+    await db
+        .collection('SoNo')
+        .updateOne(
+          {'_id': 'debt-g'},
+          {
+            r'$set': {'SuaXoaDangLuu': abortedPlan},
+          },
+        );
+    await service.payment(
+      RecordKind.order,
+      107,
+      'sale:g:payment',
+      null,
+      requestId: token(),
+    );
+    header = await get('HoaDonBan', 'g');
+    check(
+      header['SuaXoaDangLuu'] == null &&
+          (await get('SoNo', 'debt-g'))['SuaXoaDangLuu'] == null &&
+          header['SoTienConNo'] == 10000000,
+      'Khóa của kế hoạch đã hủy không chặn xóa phiếu trả nợ',
+    );
+
+    // H. A completed plan that never released its lock must not block either.
+    const donePlan = 'done-payment-plan';
+    await put(
+      'HoaDonBan',
+      newSale(
+        id: 'h',
+        orderId: 108,
+        total: 10000000,
+        paid: 10000000,
+        cash: 10000000,
+        change: 0,
+        dueAmount: 0,
+        dueDate: due,
+        interestDate: sale,
+      ),
+    );
+    await put('SoNo', {
+      '_id': 'debt-h',
+      'IdSoNo': 108,
+      'IdHoaDon': 108,
+      'SoTienDaTra': 10000000,
+      'SoTienConNo': 0,
+    });
+    await addPayment(108, 'sale:h:payment', 10000000, sale);
+    await put('_record_changes', {
+      '_id': donePlan,
+      'Kind': 'order',
+      'Parent': 108,
+      'State': 'done',
+      'Released': false,
+      'Date': DateTime.now().toUtc(),
+    });
+    await db
+        .collection('HoaDonBan')
+        .updateOne(
+          {'_id': 'h'},
+          {
+            r'$set': {'SuaXoaDangLuu': donePlan},
+          },
+        );
+    await db
+        .collection('SoNo')
+        .updateOne(
+          {'_id': 'debt-h'},
+          {
+            r'$set': {'SuaXoaDangLuu': donePlan},
+          },
+        );
+    await service.payment(
+      RecordKind.order,
+      108,
+      'sale:h:payment',
+      null,
+      requestId: token(),
+    );
+    header = await get('HoaDonBan', 'h');
+    check(
+      header['SuaXoaDangLuu'] == null &&
+          (await get('SoNo', 'debt-h'))['SuaXoaDangLuu'] == null &&
+          header['SoTienConNo'] == 10000000,
+      'Khóa của kế hoạch đã xong không chặn xóa phiếu trả nợ',
+    );
+
+    // I. No pending plans or locks left behind.
     check(
       await db.collection('_record_changes').count({
             'State': {

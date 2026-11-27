@@ -1,5 +1,6 @@
 import 'customer_address_migration.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'change_history.dart';
 import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/customers/customer_models.dart';
@@ -197,6 +198,7 @@ class MongoCustomerRepository implements CustomerRepository {
     }
     final identity = draft.identityFields();
     await _connect();
+    final before = await _db.collection('KhachHang').findOne({'IdKH': id});
     final row = await _db
         .collection('KhachHang')
         .findAndModify(
@@ -220,7 +222,23 @@ class MongoCustomerRepository implements CustomerRepository {
     if (row == null) {
       throw const CustomerException('Khách hàng không còn tồn tại.');
     }
-    return {...row, 'DiaChiHienThi': draft.address.trim()};
+    final updated = {...row, 'DiaChiHienThi': draft.address.trim()};
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'customer',
+      action: 'edit',
+      kind: 'customer',
+      parentId: id,
+      summary: ChangeHistory.summary(
+        'edit',
+        'customer',
+        id,
+        detail: draft.name.trim(),
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: ChangeHistory.snapshot(updated),
+    );
+    return updated;
   }
 
   @override
@@ -277,6 +295,22 @@ class MongoCustomerRepository implements CustomerRepository {
         'Không xóa được khách hàng. Có thể khách đang có đơn được lưu.',
       );
     }
+    final before = active ?? customer;
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'customer',
+      action: 'delete',
+      kind: 'customer',
+      parentId: id,
+      summary: ChangeHistory.summary(
+        'delete',
+        'customer',
+        id,
+        detail: '${before['TenKhachHang'] ?? ''}',
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: {...ChangeHistory.snapshot(before) ?? const {}, 'DaXoa': true},
+    );
   }
 
   @override
@@ -490,6 +524,17 @@ class MongoCustomerRepository implements CustomerRepository {
       if (!done.isSuccess || done.hasWriteErrors) {
         throw StateError('journal completion');
       }
+      await ChangeHistory.recordDirect(
+        _db,
+        source: 'customer-merge',
+        action: 'merge',
+        kind: 'customer',
+        parentId: targetId,
+        summary: 'Gộp khách hàng ${sources.join(', ')} vào #$targetId',
+        before: {'SourceIds': sources},
+        after: {'TargetId': targetId},
+        extra: {'MergeKey': key},
+      );
       started = false;
     } finally {
       // Interrupted writes retain their lock and journal so the same merge can resume.

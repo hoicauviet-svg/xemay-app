@@ -2,6 +2,7 @@ import '../models/maintenance/record_maintenance.dart';
 import 'mongo_record_maintenance.dart';
 import '../models/finance/cash_category.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'change_history.dart';
 import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/finance/finance_models.dart';
@@ -118,22 +119,36 @@ class MongoFinanceRepository implements FinanceRepository {
       throw const FinanceException('Nhập tên danh mục từ 1 đến 100 ký tự.');
     }
     await _connect();
+    final before = await _db.collection('DanhMucThuChi').findOne({
+      '_id': category.id,
+    });
+    final fields = {...category.toFields()}..remove('_id');
     await _checked(
       _db
           .collection('DanhMucThuChi')
-          .updateOne(
-            {'_id': category.id},
-            {
-              r'$set': {...category.toFields()}..remove('_id'),
-            },
-            upsert: true,
-          ),
+          .updateOne({'_id': category.id}, {r'$set': fields}, upsert: true),
+    );
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'finance-category',
+      action: 'edit',
+      kind: 'cashCategory',
+      parentId: category.id,
+      summary: ChangeHistory.summary(
+        'edit',
+        'cashCategory',
+        category.id,
+        detail: category.name.trim(),
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: ChangeHistory.snapshot({...?before, ...fields}),
     );
   }
 
   @override
   Future<void> archiveCategory(String id) async {
     await _connect();
+    final before = await _db.collection('DanhMucThuChi').findOne({'_id': id});
     await _checked(
       _db
           .collection('DanhMucThuChi')
@@ -144,6 +159,21 @@ class MongoFinanceRepository implements FinanceRepository {
             },
             upsert: true,
           ),
+    );
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'finance-category',
+      action: 'delete',
+      kind: 'cashCategory',
+      parentId: id,
+      summary: ChangeHistory.summary(
+        'delete',
+        'cashCategory',
+        id,
+        detail: '${before?['TenDanhMuc'] ?? ''}',
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: {...?before, 'HoatDong': false},
     );
   }
 

@@ -19,6 +19,7 @@ enum DashboardModule {
   openingDebt('Nợ cũ'),
   reports('Báo cáo'),
   settings('Cài đặt'),
+  about('Giới thiệu'),
   vehicleBrands('Hãng xe');
 
   const DashboardModule(this.label);

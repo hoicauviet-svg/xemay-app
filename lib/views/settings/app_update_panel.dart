@@ -7,8 +7,10 @@ import '../../core/app_version.dart';
 import '../widgets/form_section.dart';
 
 class AppUpdatePanel extends StatefulWidget {
-  const AppUpdatePanel({super.key, this.controller});
+  const AppUpdatePanel({super.key, this.controller, this.intro, this.title});
   final AppUpdateController? controller;
+  final Widget? intro;
+  final String? title;
 
   @override
   State<AppUpdatePanel> createState() => _AppUpdatePanelState();
@@ -63,80 +65,89 @@ class _AppUpdatePanelState extends State<AppUpdatePanel> {
         _controller.phase == UpdatePhase.ready;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: FormSection(
-        title: null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Phiên bản hiện tại: ${AppVersion.label}'),
-          const SizedBox(height: 8),
-          const Text(
-            'Ứng dụng tự kiểm tra bản phát hành trên GitHub khi mở. Bản mới chỉ được cài sau khi xác nhận. Lưu một địa chỉ khác để đổi nguồn, hoặc lưu ô trống để tắt kiểm tra.',
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            key: const ValueKey('settings-update-feed'),
-            controller: _feed,
-            enabled: !_controller.busy,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: const InputDecoration(
-              labelText: 'Địa chỉ tệp phiên bản',
-              hintText: 'https://may-chu/xemay/latest.json',
-            ),
-          ),
-          const SizedBox(height: 20),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
+          if (widget.intro != null) ...[
+            widget.intro!,
+            const SizedBox(height: 16),
+          ],
+          FormSection(
+            title: widget.title,
             children: [
-              OutlinedButton.icon(
-                key: const ValueKey('settings-save-update'),
-                onPressed: _controller.busy
-                    ? null
-                    : () => _controller.saveFeed(_feed.text),
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Lưu địa chỉ'),
+              Text('Phiên bản hiện tại: ${AppVersion.label}'),
+              const SizedBox(height: 8),
+              const Text(
+                'Ứng dụng tự kiểm tra bản phát hành trên GitHub khi mở. Bản mới chỉ được cài sau khi xác nhận. Lưu một địa chỉ khác để đổi nguồn, hoặc lưu ô trống để tắt kiểm tra.',
               ),
-              FilledButton.icon(
-                key: const ValueKey('settings-check-update'),
-                onPressed: _controller.busy ? null : _controller.check,
-                icon: const Icon(Icons.system_update_alt),
-                label: const Text('Kiểm tra cập nhật'),
+              const SizedBox(height: 20),
+              TextField(
+                key: const ValueKey('settings-update-feed'),
+                controller: _feed,
+                enabled: !_controller.busy,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(
+                  labelText: 'Địa chỉ tệp phiên bản',
+                  hintText: 'https://may-chu/xemay/latest.json',
+                ),
               ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('settings-save-update'),
+                    onPressed: _controller.busy
+                        ? null
+                        : () => _controller.saveFeed(_feed.text),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Lưu địa chỉ'),
+                  ),
+                  FilledButton.icon(
+                    key: const ValueKey('settings-check-update'),
+                    onPressed: _controller.busy ? null : _controller.check,
+                    icon: const Icon(Icons.system_update_alt),
+                    label: const Text('Kiểm tra cập nhật'),
+                  ),
+                ],
+              ),
+              if (_controller.busy) ...[
+                const SizedBox(height: 16),
+                LinearProgressIndicator(value: _controller.progress),
+              ],
+              if (_controller.message != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _controller.message!,
+                  style: TextStyle(
+                    color: _controller.phase == UpdatePhase.error
+                        ? const Color(0xFFB5473D)
+                        : const Color(0xFF176455),
+                  ),
+                ),
+              ],
+              if (available && remote != null) ...[
+                const SizedBox(height: 16),
+                Text('Bản mới: ${remote.label}'),
+                if (remote.notes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(remote.notes),
+                ],
+                const SizedBox(height: 16),
+                if (Platform.isWindows)
+                  FilledButton.icon(
+                    key: const ValueKey('settings-install-update'),
+                    onPressed: _controller.busy ? null : _install,
+                    icon: const Icon(Icons.download_outlined),
+                    label: const Text('Tải và cài đặt'),
+                  )
+                else
+                  const Text('Tệp cài đặt chỉ chạy trên Windows.'),
+              ],
             ],
           ),
-          if (_controller.busy) ...[
-            const SizedBox(height: 16),
-            LinearProgressIndicator(value: _controller.progress),
-          ],
-          if (_controller.message != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              _controller.message!,
-              style: TextStyle(
-                color: _controller.phase == UpdatePhase.error
-                    ? const Color(0xFFB5473D)
-                    : const Color(0xFF176455),
-              ),
-            ),
-          ],
-          if (available && remote != null) ...[
-            const SizedBox(height: 16),
-            Text('Bản mới: ${remote.label}'),
-            if (remote.notes.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(remote.notes),
-            ],
-            const SizedBox(height: 16),
-            if (Platform.isWindows)
-              FilledButton.icon(
-                key: const ValueKey('settings-install-update'),
-                onPressed: _controller.busy ? null : _install,
-                icon: const Icon(Icons.download_outlined),
-                label: const Text('Tải và cài đặt'),
-              )
-            else
-              const Text('Tệp cài đặt chỉ chạy trên Windows.'),
-          ],
         ],
       ),
     );

@@ -179,7 +179,11 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                   _information(order),
                   _products(order),
                   _payments(order),
-                  OrderPaymentForm(order: order, onSave: _pay),
+                  _isCancelled(order)
+                      ? const Center(
+                          child: Text('Đơn hàng đã hủy, không thể thanh toán.'),
+                        )
+                      : OrderPaymentForm(order: order, onSave: _pay),
                 ],
               );
             },
@@ -210,35 +214,30 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
     return _summary(order);
   }
 
-  Future<void> _deleteOrder() async {
+  Future<void> _cancelOrder(OrderDetails order) async {
     final maintenance = _controller.repository.maintenance;
     if (maintenance == null || _deleting) return;
-    final yes = await showDialog<bool>(
+    final customer = _value(order.customer?['TenKhachHang']).trim();
+    final cancelReason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Xóa đơn hàng'),
-        content: Text(
-          'Xóa đơn hàng #${widget.orderId} cùng chi tiết và các phiếu thu liên quan? Sản phẩm sẽ được hoàn lại tồn kho.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Xóa'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (context) => _CancelOrderDialog(
+        orderId: widget.orderId,
+        order: order,
+        customer: customer,
+        total: _money(order.total),
+        paid: _money(order.paid),
+        due: _money(order.due),
       ),
     );
-    if (yes != true || !mounted) return;
+    if (cancelReason == null || !mounted) return;
     setState(() => _deleting = true);
     try {
       await maintenance.delete(
         RecordKind.order,
         widget.orderId,
         requestId: ObjectId().oid,
+        reason: cancelReason,
       );
       if (mounted) Navigator.pop(context);
     } catch (error) {
@@ -248,7 +247,7 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
             content: Text(
               error is RecordChangeException
                   ? error.message
-                  : 'Chưa xóa được đơn hàng. Vui lòng thử lại.',
+                  : 'Chưa hủy được đơn hàng. Vui lòng thử lại.',
             ),
           ),
         );
@@ -258,11 +257,17 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
     }
   }
 
+  bool _isCancelled(OrderDetails order) =>
+      order.header['TrangThaiDon'] == 'da_huy';
+
   Widget _summary(OrderDetails order) {
     final h = order.header, c = order.customer;
-    final canChange = _controller.repository.maintenance != null;
+    final cancelled = _isCancelled(order);
+    final canChange = _controller.repository.maintenance != null && !cancelled;
     final fields = {
       'Mã đơn hàng': '#${widget.orderId}',
+      'Trạng thái': cancelled ? 'Đã hủy' : 'Hoàn thành',
+      if (cancelled) 'Lý do hủy': _value(h['LyDoHuy']),
       'Ngày bán': _date(h['NgayMua']),
       'Khách hàng': _value(c?['TenKhachHang']),
       'Số điện thoại': _value(c?['SoDienThoai']),
@@ -270,8 +275,8 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
       'Tiền hàng': _money(order.goodsTotal ?? order.total),
       'Giảm giá': _money(order.discount),
       'Tổng thanh toán': _money(order.total),
-      'Đã thanh toán': _money(order.paid),
-      'Còn nợ': _money(order.due),
+      'Đã thanh toán': cancelled ? '—' : _money(order.paid),
+      'Còn nợ': cancelled ? '—' : _money(order.due),
       'Ngày hẹn thanh toán': _date(h['NgayHen']),
       'Ngày tính lãi': _date(h['NgayTinhLai']),
       'Ghi chú': _value(h['GhiChu']),
@@ -284,6 +289,23 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
             child: FormSection(
               title: null,
               children: [
+                if (cancelled) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF4F3),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFF0C6C2)),
+                    ),
+                    child: Text(
+                      'Đơn hàng đã hủy. Lịch sử thanh toán đã được xóa và sản phẩm đã được hoàn lại tồn kho. Khách hàng vẫn được giữ nguyên.'
+                      '${_value(h['LyDoHuy']).isEmpty ? '' : '\nLý do: ${_value(h['LyDoHuy'])}'}',
+                      style: const TextStyle(color: Color(0xFF8A2F28)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 ResponsiveFormFields(
                   compact: true,
                   fields: [
@@ -316,10 +338,10 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                     label: const Text('Sửa'),
                   ),
                   TextButton.icon(
-                    key: const ValueKey('order-delete'),
-                    onPressed: _deleting ? null : _deleteOrder,
-                    icon: const Icon(Icons.delete_outline),
-                    label: Text(_deleting ? 'Đang xóa…' : 'Xóa'),
+                    key: const ValueKey('order-cancel'),
+                    onPressed: _deleting ? null : () => _cancelOrder(order),
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: Text(_deleting ? 'Đang hủy…' : 'Hủy đơn hàng'),
                   ),
                 ],
                 OutlinedButton.icon(
@@ -383,13 +405,16 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
                       ),
                     ),
                     DataCell(
-                      RecordLineDeleteButton(
-                        repository: _controller.repository.maintenance,
-                        kind: RecordKind.order,
-                        parentId: widget.orderId,
-                        lineId: l['_id'] ?? 'legacy-edit:${widget.orderId}',
-                        onChanged: _controller.load,
-                      ),
+                      _isCancelled(order)
+                          ? const SizedBox.shrink()
+                          : RecordLineDeleteButton(
+                              repository: _controller.repository.maintenance,
+                              kind: RecordKind.order,
+                              parentId: widget.orderId,
+                              lineId:
+                                  l['_id'] ?? 'legacy-edit:${widget.orderId}',
+                              onChanged: _controller.load,
+                            ),
                     ),
                   ],
                 ),
@@ -438,3 +463,127 @@ class _OrderDetailsScreenState extends State<OrderDetailsScreen>
           ),
   );
 }
+
+class _CancelOrderDialog extends StatefulWidget {
+  const _CancelOrderDialog({
+    required this.orderId,
+    required this.order,
+    required this.customer,
+    required this.total,
+    required this.paid,
+    required this.due,
+  });
+  final int orderId;
+  final OrderDetails order;
+  final String customer, total, paid, due;
+
+  @override
+  State<_CancelOrderDialog> createState() => _CancelOrderDialogState();
+}
+
+class _CancelOrderDialogState extends State<_CancelOrderDialog> {
+  final _reason = TextEditingController();
+  bool _acknowledged = false;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  bool get _canConfirm => _acknowledged && _reason.text.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Hủy đơn hàng #${widget.orderId}'),
+    content: SizedBox(
+      width: 540,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Đơn hàng của ${widget.customer.isEmpty ? 'khách lẻ' : widget.customer} sẽ bị hủy. Vui lòng kiểm tra kỹ:',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 24,
+              runSpacing: 8,
+              children: [
+                Text('Tổng đơn: ${widget.total}'),
+                Text('Đã trả: ${widget.paid}'),
+                Text('Còn nợ: ${widget.due}'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _cancelWarning(Icons.block, 'Đơn hàng đã hủy không thể hoàn tác.'),
+            _cancelWarning(
+              Icons.person_outline,
+              'Khách hàng không bị xóa khỏi danh sách.',
+            ),
+            _cancelWarning(
+              Icons.receipt_long_outlined,
+              'Toàn bộ ${widget.order.payments.length} phiếu/lịch sử thanh toán của đơn sẽ bị xóa.',
+            ),
+            _cancelWarning(
+              Icons.inventory_2_outlined,
+              '${widget.order.lines.length} dòng sản phẩm sẽ được hoàn lại tồn kho (nếu có).',
+            ),
+            _cancelWarning(
+              Icons.account_balance_wallet_outlined,
+              'Công nợ và các khoản thu lãi liên quan sẽ được cập nhật lại.',
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('order-cancel-reason'),
+              controller: _reason,
+              maxLength: 1000,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Lý do hủy đơn hàng',
+                hintText: 'Ví dụ: khách đổi ý, nhập nhầm đơn…',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 4),
+            CheckboxListTile(
+              key: const ValueKey('order-cancel-ack'),
+              value: _acknowledged,
+              onChanged: (value) =>
+                  setState(() => _acknowledged = value ?? false),
+              title: const Text('Tôi đã kiểm tra kỹ và hiểu hành động này.'),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Quay lại'),
+      ),
+      FilledButton(
+        key: const ValueKey('order-cancel-confirm'),
+        onPressed: _canConfirm
+            ? () => Navigator.pop(context, _reason.text.trim())
+            : null,
+        child: const Text('Hủy đơn hàng'),
+      ),
+    ],
+  );
+}
+
+Widget _cancelWarning(IconData icon, String text) => Padding(
+  padding: const EdgeInsets.only(bottom: 10),
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(icon, size: 18, color: const Color(0xFFB44141)),
+      const SizedBox(width: 10),
+      Expanded(child: Text(text)),
+    ],
+  ),
+);

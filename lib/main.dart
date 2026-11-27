@@ -11,5 +11,5 @@ Future<void> main() async {
   } catch (_) {
     DatabaseConfig.startupReadFailed = true;
   }
-  runApp(const StoreApp());
+  runApp(const StoreApp(showSplash: true));
 }

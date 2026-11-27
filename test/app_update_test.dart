@@ -9,7 +9,7 @@ import 'package:xemay_app/core/app_version.dart';
 import 'package:xemay_app/models/updates/app_release.dart';
 import 'package:xemay_app/services/app_update_client.dart';
 import 'package:xemay_app/services/update_settings_store.dart';
-import 'package:xemay_app/views/settings/app_update_panel.dart';
+import 'package:xemay_app/views/about/about_tab.dart';
 import 'package:xemay_app/views/settings/settings_tab.dart';
 import 'support/fake_database_settings_repository.dart';
 
@@ -265,7 +265,7 @@ void main() {
     }, createHttpClient: _RealHttp().createHttpClient);
   });
 
-  testWidgets('settings exposes the version tab and a newer release', (
+  testWidgets('about tab exposes the version and a newer release', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 1100);
@@ -293,10 +293,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(Tab, 'Phiên bản'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Phiên bản'), findsNothing);
+    expect(find.widgetWithText(Tab, 'Sửa lỗi'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Lịch sử'), findsOneWidget);
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: AppUpdatePanel(controller: controller)),
+        home: Scaffold(body: AboutTab(updateController: controller)),
       ),
     );
     await tester.pumpAndSettle();

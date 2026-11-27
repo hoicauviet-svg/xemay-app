@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:xemay_app/app.dart';
 import 'package:xemay_app/core/theme/app_theme.dart';
 import 'package:xemay_app/models/goods_receipt/goods_receipt_models.dart';
+import 'package:xemay_app/views/batches/batch_details_screen.dart';
 import 'package:xemay_app/views/goods_receipt/goods_receipt_screen.dart';
 import 'package:xemay_app/views/goods_receipt/goods_receipt_form_screen.dart';
 import 'support/fake_batch_repository.dart';
@@ -21,6 +22,31 @@ class _ReceiptRepository implements ReceiptRepository {
 
   @override
   Future<void> close() async {}
+}
+
+Future<void> _fillBatchHeader(WidgetTester tester) async {
+  await tester.enterText(find.byKey(const ValueKey('batch-quantity')), '2');
+  await tester.enterText(find.byKey(const ValueKey('batch-total')), '40000000');
+  await tester.enterText(
+    find.byKey(const ValueKey('batch-delivered-by')),
+    'Người giao thử',
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(const ValueKey('directory-option-carrier-carrier-test')),
+  );
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byKey(const ValueKey('batch-origin')),
+    'Nơi nhập thử',
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(const ValueKey('directory-option-partner-partner-test')),
+  );
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const ValueKey('batch-paid')), '10000000');
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -154,6 +180,153 @@ void main() {
       expect(refreshed, isTrue);
       expect(find.text('Nhập thành công'), findsOneWidget);
       expect(find.byType(GoodsReceiptFormScreen), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('A lot can be saved before its product details are entered', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _ReceiptRepository();
+    var refreshed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('vi'),
+        supportedLocales: const [Locale('vi')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              child: const Text('Mở nhập lô'),
+              onPressed: () async {
+                final saved = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GoodsReceiptFormScreen(
+                      type: ReceiptProductType.part,
+                      initialMode: ReceiptMode.batch,
+                      directoryRepository: FakeDirectoryRepository(),
+                      receiptRepository: repository,
+                    ),
+                  ),
+                );
+                refreshed = saved == true;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Mở nhập lô'));
+    await tester.pumpAndSettle();
+    expect(find.text('Thông tin lô nhập'), findsOneWidget);
+    expect(find.byKey(const ValueKey('line-name-2')), findsNothing);
+    await _fillBatchHeader(tester);
+    await tester.tap(find.text('Lưu lô'));
+    await tester.pumpAndSettle();
+    final saved = repository.saved!;
+    expect(saved.mode, ReceiptMode.batch);
+    expect(saved.lines, isEmpty);
+    expect(saved.batchInfo!.quantity, 2);
+    expect(saved.batchInfo!.totalAmount, 40000000);
+    expect(saved.batchInfo!.paidAmount, 10000000);
+    expect(saved.batchInfo!.remainingAmount, 30000000);
+    expect(saved.partnerId, 'partner-test');
+    expect(saved.batchInfo!.carrierId, 'carrier-test');
+    expect(refreshed, isTrue);
+    expect(
+      find.text('Đã lưu lô. Có thể bổ sung sản phẩm sau trong chi tiết lô.'),
+      findsOneWidget,
+    );
+    expect(find.byType(GoodsReceiptFormScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('A stored lot without products still offers adding them later', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = FakeBatchRepository()..hasProducts = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('vi'),
+        supportedLocales: const [Locale('vi')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: BatchDetailsScreen(
+          batch: repository.batch,
+          type: ReceiptProductType.newVehicle,
+          repository: repository,
+          directoryRepository: FakeDirectoryRepository(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(Tab, 'Danh sách sản phẩm'));
+    await tester.pumpAndSettle();
+    expect(find.text('Lô hàng chưa có sản phẩm liên kết.'), findsOneWidget);
+    expect(find.byTooltip('Thêm sản phẩm vào lô'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'Saving the second batch step without product rows still stores the lot',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repository = _ReceiptRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          locale: const Locale('vi'),
+          supportedLocales: const [Locale('vi')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                child: const Text('Mở nhập lô'),
+                onPressed: () => Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => GoodsReceiptFormScreen(
+                      type: ReceiptProductType.part,
+                      initialMode: ReceiptMode.batch,
+                      directoryRepository: FakeDirectoryRepository(),
+                      receiptRepository: repository,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Mở nhập lô'));
+      await tester.pumpAndSettle();
+      await _fillBatchHeader(tester);
+      await tester.tap(find.text('Tiếp tục'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('line-name-2')), findsOneWidget);
+      expect(
+        find.text(
+          'Bỏ trống danh sách sản phẩm nếu muốn bổ sung chi tiết sau khi lưu lô.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Lưu'));
+      await tester.pumpAndSettle();
+      expect(repository.saved!.lines, isEmpty);
+      expect(repository.saved!.batchInfo!.quantity, 2);
       expect(tester.takeException(), isNull);
     },
   );

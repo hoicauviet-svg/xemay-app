@@ -475,6 +475,21 @@ void main() {
       find.byKey(const ValueKey('sales-price-draft-default-0')),
       '50000',
     );
+    await tester.pump();
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sales-total-draft-default')))
+          .data,
+      '50.000 đ',
+    );
+    expect(sale.subtotal, 50000);
+    expect(sale.total, 50000);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sales-summary-subtotal')))
+          .data,
+      '50.000 đ',
+    );
     await tester.enterText(find.byKey(const ValueKey('sales-paid-0')), '50000');
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Lưu đơn hàng'));

@@ -3,7 +3,7 @@ import 'package:xemay_app/models/goods_receipt/goods_receipt_models.dart';
 import 'package:xemay_app/models/repositories/batch_repository.dart';
 
 class FakeBatchRepository extends BatchRepository {
-  bool fail = false;
+  bool fail = false, hasProducts = true;
   int fetchCalls = 0;
   final batch = ReceiptBatch(
     id: 42,
@@ -38,18 +38,20 @@ class FakeBatchRepository extends BatchRepository {
   Future<List<BatchProduct>> products(
     ReceiptBatch batch,
     ReceiptProductType type,
-  ) async => [
-    BatchProduct(
-      batchId: batch.id,
-      productId: 1,
-      vehicleId: 7,
-      name: 'Xe trong lô thử',
-      quantity: 1,
-      cost: 1000000,
-      frameNumber: 'KHUNG-LO-42',
-      engineNumber: 'MAY-LO-42',
-    ),
-  ];
+  ) async => hasProducts
+      ? [
+          BatchProduct(
+            batchId: batch.id,
+            productId: 1,
+            vehicleId: 7,
+            name: 'Xe trong lô thử',
+            quantity: 1,
+            cost: 1000000,
+            frameNumber: 'KHUNG-LO-42',
+            engineNumber: 'MAY-LO-42',
+          ),
+        ]
+      : const [];
   @override
   Future<ReceiptBatch?> findById(int batchId) async =>
       batchId == batch.id ? batch : null;

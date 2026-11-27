@@ -445,6 +445,7 @@ class MongoSalesRepository implements SalesRepository {
       'SoTienConNo': draft.due,
       'TienThua': draft.change,
       'PhienBanBanHang': 3,
+      'TrangThaiDon': 'hoan_thanh',
       'MaYeuCauLuu': id,
       'TrangThaiLuu': 'dang_luu',
     });

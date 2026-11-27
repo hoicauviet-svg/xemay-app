@@ -4,6 +4,7 @@ import 'mongo_sync_journal.dart';
 import '../models/maintenance/record_maintenance.dart';
 import '../core/config/database_config.dart';
 import '../models/finance/cash_category.dart';
+import 'change_history.dart';
 import 'cost_delete_repair.dart';
 
 /// A durable per-parent change plan. Every write is an absolute, replayable update.
@@ -32,6 +33,19 @@ class MongoRecordMaintenance implements RecordMaintenance {
   final Db db;
   final Future<void> Function() connect;
   final Future<void> Function(String)? checkpoint;
+  static const _lockCollections = [
+    'HoaDonBan',
+    'NhapHang',
+    'SoNo',
+    'CamDo',
+    'VayVon',
+    'NoCu',
+    'Xe',
+    'TonKhoPhuTung',
+    'SanPham',
+    'ChiTietNhapHang',
+    'ThuChiKhac',
+  ];
   static const specs = {
     RecordKind.cash: ('ThuChiKhac', 'ThuChiId', '_none', 'Parent', '', '', ''),
     RecordKind.vehicleProduct: ('Xe', 'IdXe', '_none', 'Parent', '', '', ''),
@@ -375,7 +389,13 @@ class MongoRecordMaintenance implements RecordMaintenance {
               },
             ],
           },
-          projection: {'Kind': 1, 'Parent': 1, 'Date': 1, 'DeleteParent': 1},
+          projection: {
+            'Kind': 1,
+            'Parent': 1,
+            'Date': 1,
+            'Action': 1,
+            'DeleteParent': 1,
+          },
           sort: {'Date': 1},
         )
         .toList();
@@ -444,30 +464,7 @@ class MongoRecordMaintenance implements RecordMaintenance {
           120) {
         fail('Phiếu đang được sửa/xóa. Vui lòng thử lại sau.');
       }
-      for (final name in [
-        'HoaDonBan',
-        'NhapHang',
-        'SoNo',
-        'CamDo',
-        'VayVon',
-        'NoCu',
-        'Xe',
-        'TonKhoPhuTung',
-        'SanPham',
-        'ChiTietNhapHang',
-        'ThuChiKhac',
-      ]) {
-        await checked(
-          db
-              .collection(name)
-              .updateMany(
-                {'SuaXoaDangLuu': request},
-                {
-                  r'$unset': {'SuaXoaDangLuu': ''},
-                },
-              ),
-        );
-      }
+      await _clearLocks(request);
       await checked(
         journal.updateOne(
           {'_id': request},
@@ -597,6 +594,38 @@ class MongoRecordMaintenance implements RecordMaintenance {
     }
   }
 
+  Future<void> _clearLocks(String request) async {
+    for (final name in _lockCollections) {
+      await checked(
+        db
+            .collection(name)
+            .updateMany(
+              {'SuaXoaDangLuu': request},
+              {
+                r'$unset': {'SuaXoaDangLuu': ''},
+              },
+            ),
+      );
+    }
+  }
+
+  /// A lock can outlive its plan after an old crash or a partial restore.
+  /// Clearing it is safe only when the referenced plan can no longer run.
+  Future<bool> _releaseInactiveLock(String request) async {
+    final plan = await db.collection('_record_changes').findOne({
+      '_id': request,
+    });
+    if (plan == null || plan['State'] == 'aborted') {
+      await _clearLocks(request);
+      return true;
+    }
+    if (plan['State'] == 'done') {
+      await _releasePlan(plan);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _releasePlan(Map<String, dynamic> plan) async {
     for (final raw in plan['Locks'] as List? ?? []) {
       final lock = raw as Map;
@@ -611,6 +640,7 @@ class MongoRecordMaintenance implements RecordMaintenance {
             ),
       );
     }
+    await _clearLocks(plan['_id'] as String);
     await checked(
       db
           .collection('_record_changes')
@@ -631,8 +661,10 @@ class MongoRecordMaintenance implements RecordMaintenance {
       RecordEditData,
       Future<void> Function(String, Map<String, dynamic>),
     )
-    make,
-  ) async {
+    make, {
+    required String action,
+    String? detail,
+  }) async {
     if (!RegExp(r'^[a-f0-9]{24}$').hasMatch(request)) {
       fail('Mã yêu cầu không hợp lệ.');
     }
@@ -648,11 +680,15 @@ class MongoRecordMaintenance implements RecordMaintenance {
       return;
     }
     final s = specs[kind]!;
-    final existing = await db.collection(s.$1).findOne({s.$2: id});
-    if (existing?['SuaXoaDangLuu'] is String) {
+    var existing = await db.collection(s.$1).findOne({s.$2: id});
+    final heldLock = existing?['SuaXoaDangLuu'];
+    if (heldLock is String && !await _releaseInactiveLock(heldLock)) {
       fail(
         'Phiếu có thay đổi chưa hoàn tất. Bấm Tiếp tục xử lý trước khi chỉnh tiếp.',
       );
+    }
+    if (heldLock is String) {
+      existing = await db.collection(s.$1).findOne({s.$2: id});
     }
     final locks = <Map<String, dynamic>>[];
     var planned = false;
@@ -660,7 +696,7 @@ class MongoRecordMaintenance implements RecordMaintenance {
       if (locks.any((l) => l['Collection'] == name && l['Id'] == row['_id'])) {
         return;
       }
-      final held = await db
+      Future<dynamic> attempt() => db
           .collection(name)
           .findAndModify(
             query: {
@@ -685,6 +721,14 @@ class MongoRecordMaintenance implements RecordMaintenance {
             },
             returnNew: true,
           );
+      var held = await attempt();
+      if (held == null) {
+        final current = await db.collection(name).findOne({'_id': row['_id']});
+        final stale = current?['SuaXoaDangLuu'];
+        if (stale is String && await _releaseInactiveLock(stale)) {
+          held = await attempt();
+        }
+      }
       if (held == null) {
         fail('Phiếu/sản phẩm đang có giao dịch được lưu. Tải lại rồi thử lại.');
       }
@@ -700,6 +744,7 @@ class MongoRecordMaintenance implements RecordMaintenance {
               r'$set': {
                 'Kind': kind.name,
                 'Parent': id,
+                'Action': action,
                 'State': 'preparing',
                 'Date': DateTime.now().toUtc(),
               },
@@ -719,6 +764,34 @@ class MongoRecordMaintenance implements RecordMaintenance {
       }
       final data = await _read(kind, id);
       final operations = await make(data, lock);
+      final after = ChangeHistory.afterFromOperations(
+        data.header,
+        operations,
+        s.$1,
+        data.header['_id'],
+      );
+      operations.add({
+        'Collection': ChangeHistory.collection,
+        'Id': ChangeHistory.id(request),
+        'Fields': ChangeHistory.entry(
+          action: action,
+          kind: kind.name,
+          parentId: id,
+          source: 'record-maintenance',
+          requestId: request,
+          summary: ChangeHistory.summary(action, kind.name, id, detail: detail),
+          before: ChangeHistory.snapshot(data.header),
+          after: after,
+          changes: ChangeHistory.changes(operations),
+          extra: {
+            'PrimaryCollection': s.$1,
+            'LineCount': data.lines.length,
+            'PaymentCount': data.payments.length,
+          },
+        ),
+        'Unset': <String>[],
+        'Upsert': true,
+      });
       await checked(
         db
             .collection('_record_changes')
@@ -978,6 +1051,9 @@ class MongoRecordMaintenance implements RecordMaintenance {
     List<Map<String, dynamic>> lines, {
     required String requestId,
   }) => _run(kind, id, requestId, (data, lock) async {
+    if (kind == RecordKind.order && data.header['TrangThaiDon'] == 'da_huy') {
+      fail('Đơn hàng đã hủy, không thể sửa.');
+    }
     if (kind == RecordKind.cash) {
       if (_managedCash(data.header))
         fail(
@@ -1228,13 +1304,14 @@ class MongoRecordMaintenance implements RecordMaintenance {
       );
     }
     return operations;
-  });
+  }, action: 'edit');
 
   @override
   Future<void> delete(
     RecordKind kind,
     int id, {
     required String requestId,
+    String? reason,
   }) => _run(kind, id, requestId, (data, lock) async {
     if (kind == RecordKind.cash) {
       if (_managedCash(data.header))
@@ -1250,7 +1327,40 @@ class MongoRecordMaintenance implements RecordMaintenance {
         op('CamDo', data.header['_id'], null),
       ];
     }
-    if (kind != RecordKind.order && kind != RecordKind.batch) {
+    if (kind == RecordKind.order) {
+      if (data.header['TrangThaiDon'] == 'da_huy') {
+        fail('Đơn hàng đã hủy.');
+      }
+      final cancelReason = (reason ?? '').trim();
+      if (cancelReason.isEmpty) {
+        fail('Vui lòng nhập lý do hủy đơn hàng.');
+      }
+      if (cancelReason.length > 1000) {
+        fail('Lý do hủy không được vượt quá 1000 ký tự.');
+      }
+      final operations = await _inventory(
+        data,
+        false,
+        [],
+        lock,
+        deleting: true,
+      );
+      for (final payment in data.payments) {
+        operations.add(op('TraNo', payment['_id'], null));
+        operations.addAll(await _interestCash(payment, null));
+      }
+      final debt = Map<String, dynamic>.from(data.header['_SoNo'] as Map);
+      operations.add(op('SoNo', debt['_id'], null));
+      operations.add(
+        op('HoaDonBan', data.header['_id'], {
+          'TrangThaiDon': 'da_huy',
+          'NgayHuy': DateTime.now().toUtc(),
+          'LyDoHuy': cancelReason,
+        }),
+      );
+      return operations;
+    }
+    if (kind != RecordKind.batch) {
       fail('Loại phiếu chưa hỗ trợ xóa.');
     }
     final incoming = kind == RecordKind.batch;
@@ -1294,7 +1404,7 @@ class MongoRecordMaintenance implements RecordMaintenance {
     }
     operations.add(op(specs[kind]!.$1, data.header['_id'], null));
     return operations;
-  });
+  }, action: kind == RecordKind.order ? 'cancel' : 'delete');
 
   bool _managedCash(Map<String, dynamic> row) =>
       row['Nguon'] != null ||
@@ -1308,79 +1418,89 @@ class MongoRecordMaintenance implements RecordMaintenance {
     int id,
     dynamic lineId, {
     required String requestId,
-  }) => _run(kind, id, requestId, (data, lock) async {
-    if (kind != RecordKind.order && kind != RecordKind.batch)
-      fail('Loại phiếu không có sản phẩm.');
-    final matches = data.lines.where((l) => l['_id'] == lineId).toList();
-    if (matches.length != 1)
-      fail('Sản phẩm không còn trong phiếu. Tải lại danh sách.');
-    final line = matches.single, incoming = kind == RecordKind.batch;
-    final remaining = data.lines.where((l) => l['_id'] != lineId).toList();
-    final ops = await _inventory(
-      RecordEditData(data.header, [line], data.payments),
-      incoming,
-      [],
-      lock,
-      deleting: true,
-      removingLine: true,
-    );
-    ops.add(
-      op(incoming ? 'ChiTietNhapHang' : 'ChiTietHoaDonBan', lineId, null),
-    );
-    final changes = <String, dynamic>{};
-    num paid;
-    if (incoming) {
-      final total =
-          number(data.header['SoTien']) -
-          number(line['GiaNhap']) * number(line['SoLuong']);
-      paid = number(data.header['SoTienDaTra']);
-      if (total < paid)
-        fail(
-          'Tổng lô sau xóa thấp hơn số đã trả. Điều chỉnh phiếu thanh toán trước.',
-        );
-      changes.addAll({
-        'SoTien': total,
-        'SoTienConNo': total - paid,
-        'SoLuong': (number(data.header['SoLuong']) - number(line['SoLuong']))
-            .clamp(0, 1e15),
-      });
-    } else {
-      final goods = remaining.fold<num>(
-        0,
-        (sum, l) => sum + number(l['DonGia']) * number(l['SoLuong']),
+  }) => _run(
+    kind,
+    id,
+    requestId,
+    (data, lock) async {
+      if (kind == RecordKind.order && data.header['TrangThaiDon'] == 'da_huy') {
+        fail('Đơn hàng đã hủy, không thể xóa dòng.');
+      }
+      if (kind != RecordKind.order && kind != RecordKind.batch)
+        fail('Loại phiếu không có sản phẩm.');
+      final matches = data.lines.where((l) => l['_id'] == lineId).toList();
+      if (matches.length != 1)
+        fail('Sản phẩm không còn trong phiếu. Tải lại danh sách.');
+      final line = matches.single, incoming = kind == RecordKind.batch;
+      final remaining = data.lines.where((l) => l['_id'] != lineId).toList();
+      final ops = await _inventory(
+        RecordEditData(data.header, [line], data.payments),
+        incoming,
+        [],
+        lock,
+        deleting: true,
+        removingLine: true,
       );
-      final discount = number(data.header['GiamGia'] ?? 0);
-      if (discount > goods)
-        fail(
-          'Giảm giá đang vượt tiền hàng sau xóa. Điều chỉnh giảm giá trước.',
-        );
-      final debt = Map<String, dynamic>.from(data.header['_SoNo'] as Map);
-      paid = number(debt['SoTienDaTra']);
-      if (goods - discount < paid)
-        fail(
-          'Tổng đơn sau xóa thấp hơn số đã thu. Điều chỉnh phiếu trả nợ trước.',
-        );
-      changes.addAll({
-        'TongTienHang': goods,
-        'TongThanhToan': goods - discount,
-        'SoTienConNo': goods - discount - paid,
-        'IdXe': null,
-        'IdSanPham': null,
-      });
       ops.add(
-        op('SoNo', debt['_id'], {'SoTienConNo': goods - discount - paid}),
+        op(incoming ? 'ChiTietNhapHang' : 'ChiTietHoaDonBan', lineId, null),
       );
-    }
-    ops.add(op(specs[kind]!.$1, data.header['_id'], changes));
-    num cursor =
-        number(changes['SoTienConNo']) +
-        data.payments.fold<num>(0, (s, p) => s + number(p[specs[kind]!.$5]));
-    for (final payment in data.payments) {
-      cursor -= number(payment[specs[kind]!.$5]);
-      ops.add(op(specs[kind]!.$3, payment['_id'], {specs[kind]!.$7: cursor}));
-    }
-    return ops;
-  });
+      final changes = <String, dynamic>{};
+      num paid;
+      if (incoming) {
+        final total =
+            number(data.header['SoTien']) -
+            number(line['GiaNhap']) * number(line['SoLuong']);
+        paid = number(data.header['SoTienDaTra']);
+        if (total < paid)
+          fail(
+            'Tổng lô sau xóa thấp hơn số đã trả. Điều chỉnh phiếu thanh toán trước.',
+          );
+        changes.addAll({
+          'SoTien': total,
+          'SoTienConNo': total - paid,
+          'SoLuong': (number(data.header['SoLuong']) - number(line['SoLuong']))
+              .clamp(0, 1e15),
+        });
+      } else {
+        final goods = remaining.fold<num>(
+          0,
+          (sum, l) => sum + number(l['DonGia']) * number(l['SoLuong']),
+        );
+        final discount = number(data.header['GiamGia'] ?? 0);
+        if (discount > goods)
+          fail(
+            'Giảm giá đang vượt tiền hàng sau xóa. Điều chỉnh giảm giá trước.',
+          );
+        final debt = Map<String, dynamic>.from(data.header['_SoNo'] as Map);
+        paid = number(debt['SoTienDaTra']);
+        if (goods - discount < paid)
+          fail(
+            'Tổng đơn sau xóa thấp hơn số đã thu. Điều chỉnh phiếu trả nợ trước.',
+          );
+        changes.addAll({
+          'TongTienHang': goods,
+          'TongThanhToan': goods - discount,
+          'SoTienConNo': goods - discount - paid,
+          'IdXe': null,
+          'IdSanPham': null,
+        });
+        ops.add(
+          op('SoNo', debt['_id'], {'SoTienConNo': goods - discount - paid}),
+        );
+      }
+      ops.add(op(specs[kind]!.$1, data.header['_id'], changes));
+      num cursor =
+          number(changes['SoTienConNo']) +
+          data.payments.fold<num>(0, (s, p) => s + number(p[specs[kind]!.$5]));
+      for (final payment in data.payments) {
+        cursor -= number(payment[specs[kind]!.$5]);
+        ops.add(op(specs[kind]!.$3, payment['_id'], {specs[kind]!.$7: cursor}));
+      }
+      return ops;
+    },
+    action: 'removeLine',
+    detail: 'dòng $lineId',
+  );
 
   @override
   Future<void> deleteCost(
@@ -1452,6 +1572,8 @@ class MongoRecordMaintenance implements RecordMaintenance {
       }
       return ops;
     },
+    action: 'deleteCost',
+    detail: 'chi phí ${cost['_id'] ?? ''}',
   );
 
   Future<List<Map<String, dynamic>>> _interestCash(
@@ -1526,223 +1648,236 @@ class MongoRecordMaintenance implements RecordMaintenance {
     required String requestId,
     DateTime? interestStart,
     DateTime? nextAppointment,
-  }) => _run(kind, parentId, requestId, (data, lock) async {
-    final s = specs[kind]!, h = data.header;
-    if (kind == RecordKind.order && h['PhienBanNgayCongNo'] == 1) {
-      final sale = h['NgayMua'];
-      if (sale is DateTime) {
-        final saleDay = day(sale);
-        if (interestStart != null && day(interestStart).isBefore(saleDay)) {
-          fail('Ngày tính lãi không được trước ngày bán.');
+  }) => _run(
+    kind,
+    parentId,
+    requestId,
+    (data, lock) async {
+      if (kind == RecordKind.order && data.header['TrangThaiDon'] == 'da_huy') {
+        fail('Đơn hàng đã hủy, không thể sửa phiếu trả nợ.');
+      }
+      final s = specs[kind]!, h = data.header;
+      if (kind == RecordKind.order && h['PhienBanNgayCongNo'] == 1) {
+        final sale = h['NgayMua'];
+        if (sale is DateTime) {
+          final saleDay = day(sale);
+          if (interestStart != null && day(interestStart).isBefore(saleDay)) {
+            fail('Ngày tính lãi không được trước ngày bán.');
+          }
+          if (nextAppointment != null &&
+              day(nextAppointment).isBefore(saleDay)) {
+            fail('Ngày hẹn không được trước ngày bán.');
+          }
         }
-        if (nextAppointment != null && day(nextAppointment).isBefore(saleDay)) {
-          fail('Ngày hẹn không được trước ngày bán.');
-        }
       }
-    }
-    final found = data.payments
-        .where(
-          (p) =>
-              p['_id'] == paymentId ||
-              p[kind == RecordKind.order
-                      ? 'IdTraNo'
-                      : kind == RecordKind.batch
-                      ? 'IdTraNoNhapHang'
-                      : kind == RecordKind.pawn
-                      ? 'IdTraNoCamDo'
-                      : kind == RecordKind.funding
-                      ? 'IdTraNoVayVon'
-                      : 'Id'] ==
-                  paymentId,
-        )
-        .toList();
-    if (found.length != 1) fail('Phiếu trả nợ không còn tồn tại.');
-    final old = found.single;
-    final edited = fields == null ? null : <String, dynamic>{...old};
-    final allowed = [
-      'NgayTra',
-      s.$5,
-      if (s.$6.isNotEmpty) s.$6,
-      'GhiChu',
-      if (kind == RecordKind.order) 'SoTienLai',
-      if (kind == RecordKind.pawn) 'LaiThu',
-      if (kind == RecordKind.openingDebt) 'TienLai',
-      if (kind == RecordKind.order) 'NgayHenSauTra',
-      if (kind == RecordKind.pawn) 'NgayHen',
-    ];
-    if (edited != null) {
-      for (final key in allowed) {
-        if (fields!.containsKey(key)) edited[key] = fields[key];
-      }
-      if (edited['NgayTra'] is! DateTime) fail('Vui lòng chọn ngày trả.');
-      edited['NgayTra'] = day(edited['NgayTra']);
-      final start =
-          h[kind == RecordKind.order
-              ? 'NgayMua'
-              : kind == RecordKind.batch
-              ? 'NgayNhap'
-              : 'NgayVay'];
-      if (start is DateTime &&
-          (edited['NgayTra'] as DateTime).isBefore(day(start))) {
-        fail('Ngày trả không được trước ngày phiếu gốc.');
-      }
-      for (final key in [
+      final found = data.payments
+          .where(
+            (p) =>
+                p['_id'] == paymentId ||
+                p[kind == RecordKind.order
+                        ? 'IdTraNo'
+                        : kind == RecordKind.batch
+                        ? 'IdTraNoNhapHang'
+                        : kind == RecordKind.pawn
+                        ? 'IdTraNoCamDo'
+                        : kind == RecordKind.funding
+                        ? 'IdTraNoVayVon'
+                        : 'Id'] ==
+                    paymentId,
+          )
+          .toList();
+      if (found.length != 1) fail('Phiếu trả nợ không còn tồn tại.');
+      final old = found.single;
+      final edited = fields == null ? null : <String, dynamic>{...old};
+      final allowed = [
+        'NgayTra',
         s.$5,
         if (s.$6.isNotEmpty) s.$6,
+        'GhiChu',
         if (kind == RecordKind.order) 'SoTienLai',
         if (kind == RecordKind.pawn) 'LaiThu',
         if (kind == RecordKind.openingDebt) 'TienLai',
-      ]) {
-        number(edited[key] ?? 0);
-      }
-      if (number(edited[s.$5]) +
-              (s.$6.isEmpty ? 0 : number(edited[s.$6] ?? 0)) <=
-          0) {
-        fail('Số tiền thanh toán phải lớn hơn 0.');
-      }
-      for (final key in ['NgayHen', 'NgayHenSauTra']) {
-        if (edited[key] is DateTime &&
-            (edited[key] as DateTime).isBefore(edited['NgayTra'])) {
-          fail('Ngày hẹn không được trước ngày trả.');
+        if (kind == RecordKind.order) 'NgayHenSauTra',
+        if (kind == RecordKind.pawn) 'NgayHen',
+      ];
+      if (edited != null) {
+        for (final key in allowed) {
+          if (fields!.containsKey(key)) edited[key] = fields[key];
+        }
+        if (edited['NgayTra'] is! DateTime) fail('Vui lòng chọn ngày trả.');
+        edited['NgayTra'] = day(edited['NgayTra']);
+        final start =
+            h[kind == RecordKind.order
+                ? 'NgayMua'
+                : kind == RecordKind.batch
+                ? 'NgayNhap'
+                : 'NgayVay'];
+        if (start is DateTime &&
+            (edited['NgayTra'] as DateTime).isBefore(day(start))) {
+          fail('Ngày trả không được trước ngày phiếu gốc.');
+        }
+        for (final key in [
+          s.$5,
+          if (s.$6.isNotEmpty) s.$6,
+          if (kind == RecordKind.order) 'SoTienLai',
+          if (kind == RecordKind.pawn) 'LaiThu',
+          if (kind == RecordKind.openingDebt) 'TienLai',
+        ]) {
+          number(edited[key] ?? 0);
+        }
+        if (number(edited[s.$5]) +
+                (s.$6.isEmpty ? 0 : number(edited[s.$6] ?? 0)) <=
+            0) {
+          fail('Số tiền thanh toán phải lớn hơn 0.');
+        }
+        for (final key in ['NgayHen', 'NgayHenSauTra']) {
+          if (edited[key] is DateTime &&
+              (edited[key] as DateTime).isBefore(edited['NgayTra'])) {
+            fail('Ngày hẹn không được trước ngày trả.');
+          }
         }
       }
-    }
-    final rows =
-        [
-          for (final p in data.payments)
-            if (p['_id'] != old['_id']) p,
-          ?edited,
-        ]..sort((a, b) {
-          final date = (a['NgayTra'] as DateTime).compareTo(
-            b['NgayTra'] as DateTime,
-          );
-          return date == 0 ? '${a['_id']}'.compareTo('${b['_id']}') : date;
-        });
-    final delta =
-        (edited == null ? 0 : number(edited[s.$5])) - number(old[s.$5]);
-    final ops = <Map<String, dynamic>>[];
-    final changes = <String, dynamic>{};
-    num remaining;
-    if (kind == RecordKind.pawn) {
-      remaining =
-          number(h['SoTienVay']) -
-          rows.fold<num>(0, (sum, p) => sum + number(p[s.$5]));
-      changes['TrangThai'] = remaining == 0;
-    } else {
-      final balance = kind == RecordKind.order
-          ? Map<String, dynamic>.from(h['_SoNo'] as Map)
-          : h;
-      final dueKey = kind == RecordKind.funding
-          ? 'TongConNo'
-          : kind == RecordKind.openingDebt
-          ? 'SoCoNo'
-          : 'SoTienConNo';
-      remaining = number(balance[dueKey]) - delta;
-      final update = <String, dynamic>{dueKey: remaining};
-      if (kind != RecordKind.funding) {
-        final paid = number(balance['SoTienDaTra']) + delta;
-        if (paid < 0) fail('Số đã trả sau điều chỉnh không được âm.');
-        update['SoTienDaTra'] = paid;
-      }
-      if (kind == RecordKind.order) {
-        ops.add(op('SoNo', balance['_id'], update));
-        changes.addAll(update);
-        if (h['PhienBanBanHang'] == 3) {
-          changes.addAll(
-            _saleCash(
-              total: number(h['TongThanhToan']),
-              paid: update['SoTienDaTra'] as num,
-              change: number(h['TienThua'] ?? 0),
-            ),
-          );
-        }
+      final rows =
+          [
+            for (final p in data.payments)
+              if (p['_id'] != old['_id']) p,
+            ?edited,
+          ]..sort((a, b) {
+            final date = (a['NgayTra'] as DateTime).compareTo(
+              b['NgayTra'] as DateTime,
+            );
+            return date == 0 ? '${a['_id']}'.compareTo('${b['_id']}') : date;
+          });
+      final delta =
+          (edited == null ? 0 : number(edited[s.$5])) - number(old[s.$5]);
+      final ops = <Map<String, dynamic>>[];
+      final changes = <String, dynamic>{};
+      num remaining;
+      if (kind == RecordKind.pawn) {
+        remaining =
+            number(h['SoTienVay']) -
+            rows.fold<num>(0, (sum, p) => sum + number(p[s.$5]));
+        changes['TrangThai'] = remaining == 0;
       } else {
-        changes.addAll(update);
+        final balance = kind == RecordKind.order
+            ? Map<String, dynamic>.from(h['_SoNo'] as Map)
+            : h;
+        final dueKey = kind == RecordKind.funding
+            ? 'TongConNo'
+            : kind == RecordKind.openingDebt
+            ? 'SoCoNo'
+            : 'SoTienConNo';
+        remaining = number(balance[dueKey]) - delta;
+        final update = <String, dynamic>{dueKey: remaining};
+        if (kind != RecordKind.funding) {
+          final paid = number(balance['SoTienDaTra']) + delta;
+          if (paid < 0) fail('Số đã trả sau điều chỉnh không được âm.');
+          update['SoTienDaTra'] = paid;
+        }
+        if (kind == RecordKind.order) {
+          ops.add(op('SoNo', balance['_id'], update));
+          changes.addAll(update);
+          if (h['PhienBanBanHang'] == 3) {
+            changes.addAll(
+              _saleCash(
+                total: number(h['TongThanhToan']),
+                paid: update['SoTienDaTra'] as num,
+                change: number(h['TienThua'] ?? 0),
+              ),
+            );
+          }
+        } else {
+          changes.addAll(update);
+        }
       }
-    }
-    if (remaining < 0) fail('Tiền trả nợ vượt quá tổng nợ.');
-    // Rebuild running principal balances without inventing missing legacy payments.
-    num cursor =
-        remaining + rows.fold<num>(0, (sum, p) => sum + number(p[s.$5]));
-    for (final row in rows) {
-      cursor -= number(row[s.$5]);
-      if (cursor < 0) fail('Lịch sử trả gốc không hợp lệ.');
-      if (s.$7.isNotEmpty) ops.add(op(s.$3, row['_id'], {s.$7: cursor}));
-    }
-    if (kind != RecordKind.batch && kind != RecordKind.pawn) {
-      final oldInterest = data.payments
-          .where((p) => (p[s.$6] as num? ?? 0) > 0)
-          .toList();
-      final interestRows = rows
-          .where((p) => (p[s.$6] as num? ?? 0) > 0)
-          .toList();
-      final base =
-          h['NgayTinhLaiGoc'] ??
-          (oldInterest.isEmpty
-              ? h['NgayTinhLai']
-              : oldInterest.first['NgayTinhLaiTruocTra']);
-      final changedInterestPeriod =
-          (old[s.$6] as num? ?? 0) > 0 || (edited?[s.$6] as num? ?? 0) > 0;
-      final anchor =
-          interestStart ??
-          (interestRows.isNotEmpty ? interestRows.last['NgayTra'] : base);
-      if (changedInterestPeriod && anchor is! DateTime) {
-        fail(
-          'Thiếu ngày tính lãi gốc. Chọn ngày tính lãi sau điều chỉnh để tiếp tục.',
-        );
+      if (remaining < 0) fail('Tiền trả nợ vượt quá tổng nợ.');
+      // Rebuild running principal balances without inventing missing legacy payments.
+      num cursor =
+          remaining + rows.fold<num>(0, (sum, p) => sum + number(p[s.$5]));
+      for (final row in rows) {
+        cursor -= number(row[s.$5]);
+        if (cursor < 0) fail('Lịch sử trả gốc không hợp lệ.');
+        if (s.$7.isNotEmpty) ops.add(op(s.$3, row['_id'], {s.$7: cursor}));
       }
-      if (anchor is DateTime) changes['NgayTinhLai'] = day(anchor);
-      if (base is DateTime) changes['NgayTinhLaiGoc'] = day(base);
-    }
-    final appointmentKey = kind == RecordKind.order
-        ? 'NgayHenSauTra'
-        : 'NgayHen';
-    if (kind == RecordKind.order || kind == RecordKind.pawn) {
-      final appointments = rows
-          .where((p) => p[appointmentKey] is DateTime)
-          .toList();
-      final originals = data.payments
-          .where((p) => p[appointmentKey] is DateTime)
-          .toList();
-      final initial =
-          h['NgayHenGoc'] ??
-          (originals.isEmpty
-              ? h[kind == RecordKind.pawn ? 'NgayHan' : 'NgayHen']
-              : originals.first['NgayHenTruocTra']);
-      final appointment =
-          nextAppointment ??
-          (appointments.isNotEmpty
-              ? appointments.last[appointmentKey]
-              : initial);
-      if (old[appointmentKey] is DateTime && appointment is! DateTime) {
-        fail('Thiếu ngày hẹn gốc. Chọn ngày hẹn sau điều chỉnh để tiếp tục.');
+      if (kind != RecordKind.batch && kind != RecordKind.pawn) {
+        final oldInterest = data.payments
+            .where((p) => (p[s.$6] as num? ?? 0) > 0)
+            .toList();
+        final interestRows = rows
+            .where((p) => (p[s.$6] as num? ?? 0) > 0)
+            .toList();
+        final base =
+            h['NgayTinhLaiGoc'] ??
+            (oldInterest.isEmpty
+                ? h['NgayTinhLai']
+                : oldInterest.first['NgayTinhLaiTruocTra']);
+        final changedInterestPeriod =
+            (old[s.$6] as num? ?? 0) > 0 || (edited?[s.$6] as num? ?? 0) > 0;
+        final anchor =
+            interestStart ??
+            (interestRows.isNotEmpty ? interestRows.last['NgayTra'] : base);
+        if (changedInterestPeriod && anchor is! DateTime) {
+          fail(
+            'Thiếu ngày tính lãi gốc. Chọn ngày tính lãi sau điều chỉnh để tiếp tục.',
+          );
+        }
+        if (anchor is DateTime) changes['NgayTinhLai'] = day(anchor);
+        if (base is DateTime) changes['NgayTinhLaiGoc'] = day(base);
       }
-      if (appointment is DateTime) {
-        changes[kind == RecordKind.pawn ? 'NgayHan' : 'NgayHen'] = appointment;
+      final appointmentKey = kind == RecordKind.order
+          ? 'NgayHenSauTra'
+          : 'NgayHen';
+      if (kind == RecordKind.order || kind == RecordKind.pawn) {
+        final appointments = rows
+            .where((p) => p[appointmentKey] is DateTime)
+            .toList();
+        final originals = data.payments
+            .where((p) => p[appointmentKey] is DateTime)
+            .toList();
+        final initial =
+            h['NgayHenGoc'] ??
+            (originals.isEmpty
+                ? h[kind == RecordKind.pawn ? 'NgayHan' : 'NgayHen']
+                : originals.first['NgayHenTruocTra']);
+        final appointment =
+            nextAppointment ??
+            (appointments.isNotEmpty
+                ? appointments.last[appointmentKey]
+                : initial);
+        if (old[appointmentKey] is DateTime && appointment is! DateTime) {
+          fail('Thiếu ngày hẹn gốc. Chọn ngày hẹn sau điều chỉnh để tiếp tục.');
+        }
+        if (appointment is DateTime) {
+          changes[kind == RecordKind.pawn ? 'NgayHan' : 'NgayHen'] =
+              appointment;
+        }
       }
-    }
-    if (kind == RecordKind.order) {
-      _ensureDebtDates(changes, h);
-    }
-    if (edited == null) {
-      ops.add(op(s.$3, old['_id'], null));
-    } else {
-      final changed = <String, dynamic>{
-        for (final key in allowed)
-          if (fields!.containsKey(key)) key: edited[key],
-      };
       if (kind == RecordKind.order) {
-        final customer = await db.collection('KhachHang').findOne({
-          'IdKH': h['IdKH'],
-        });
-        edited['_OrderId'] = parentId;
-        edited['_InterestMemo'] =
-            'Thu tiền lãi của khách hàng ${customer?['TenKhachHang'] ?? ''} mã đơn hàng $parentId';
+        _ensureDebtDates(changes, h);
       }
-      ops.add(op(s.$3, old['_id'], changed));
-    }
-    if (kind == RecordKind.order) ops.addAll(await _interestCash(old, edited));
-    ops.add(op(s.$1, h['_id'], changes));
-    return ops;
-  });
+      if (edited == null) {
+        ops.add(op(s.$3, old['_id'], null));
+      } else {
+        final changed = <String, dynamic>{
+          for (final key in allowed)
+            if (fields!.containsKey(key)) key: edited[key],
+        };
+        if (kind == RecordKind.order) {
+          final customer = await db.collection('KhachHang').findOne({
+            'IdKH': h['IdKH'],
+          });
+          edited['_OrderId'] = parentId;
+          edited['_InterestMemo'] =
+              'Thu tiền lãi của khách hàng ${customer?['TenKhachHang'] ?? ''} mã đơn hàng $parentId';
+        }
+        ops.add(op(s.$3, old['_id'], changed));
+      }
+      if (kind == RecordKind.order)
+        ops.addAll(await _interestCash(old, edited));
+      ops.add(op(s.$1, h['_id'], changes));
+      return ops;
+    },
+    action: fields == null ? 'paymentDelete' : 'paymentEdit',
+    detail: 'phiếu $paymentId',
+  );
 }

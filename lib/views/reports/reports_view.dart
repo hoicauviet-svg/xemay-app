@@ -78,6 +78,11 @@ class _ReportsViewState extends State<ReportsView>
   }
 
   void _tabChanged() {
+    final kind = _tabKinds[_tabs.index];
+    if (kind != ReportKind.sales &&
+        _controller.orderStatus != ReportOrderStatus.completed) {
+      _controller.setOrderStatus(ReportOrderStatus.completed);
+    }
     setState(() {});
   }
 
@@ -399,6 +404,44 @@ class _ReportsViewState extends State<ReportsView>
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         if (!kind.current) ..._dateControls(),
+        if (kind == ReportKind.sales)
+          SizedBox(
+            width: 190,
+            height: 48,
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Trạng thái',
+                isDense: true,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<ReportOrderStatus>(
+                  key: const ValueKey('report-order-status'),
+                  value: _controller.orderStatus,
+                  isExpanded: true,
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(
+                      value: ReportOrderStatus.all,
+                      child: Text('Tất cả'),
+                    ),
+                    DropdownMenuItem(
+                      value: ReportOrderStatus.completed,
+                      child: Text('Hoàn thành'),
+                    ),
+                    DropdownMenuItem(
+                      value: ReportOrderStatus.cancelled,
+                      child: Text('Đã hủy'),
+                    ),
+                  ],
+                  onChanged: _controller.loading
+                      ? null
+                      : (value) {
+                          if (value != null) _controller.setOrderStatus(value);
+                        },
+                ),
+              ),
+            ),
+          ),
         if (kind == ReportKind.cash)
           SizedBox(
             width: 160,
@@ -502,7 +545,10 @@ class _ReportsViewState extends State<ReportsView>
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              controls,
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: controls,
+              ),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,

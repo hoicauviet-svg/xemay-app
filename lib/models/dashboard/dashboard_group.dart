@@ -28,7 +28,8 @@ enum DashboardGroup {
     DashboardModule.openingDebt,
   ]),
   reports('Báo cáo', [DashboardModule.reports]),
-  settings('Cài đặt', [DashboardModule.settings]);
+  settings('Cài đặt', [DashboardModule.settings]),
+  about('Giới thiệu', [DashboardModule.about]);
 
   const DashboardGroup(this.label, this.modules);
   final String label;

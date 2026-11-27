@@ -1,4 +1,5 @@
 import '../models/maintenance/record_maintenance.dart';
+import 'change_history.dart';
 import 'cost_delete_repair.dart';
 import 'mongo_record_maintenance.dart';
 import 'mongo_product_cash.dart';
@@ -53,10 +54,14 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
       'GhiChu': draft.notes.trim(),
       'NgayCapNhat': DateTime.now().toUtc(),
     };
+    final extensionName = p.vehicle
+        ? (current['TinhTrangXe'] == 'cu' ? 'XeCu' : 'XeMoi')
+        : null;
+    final extensionBefore = extensionName == null
+        ? null
+        : await _db.collection(extensionName).findOne({'IdXe': p.id});
     if (p.vehicle) {
-      final extension = _db.collection(
-        current['TinhTrangXe'] == 'cu' ? 'XeCu' : 'XeMoi',
-      );
+      final extension = _db.collection(extensionName!);
       final r = await extension.updateOne(
         {'IdXe': p.id},
         {
@@ -104,11 +109,44 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
     if (!r.isSuccess || r.hasWriteErrors || r.nMatched != 1) {
       throw StateError('Sản phẩm vừa thay đổi. Vui lòng tải lại và thử lại.');
     }
+    final kind = p.vehicle ? 'vehicleProduct' : 'partProduct';
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'product',
+      action: 'edit',
+      kind: kind,
+      parentId: p.id,
+      summary: ChangeHistory.summary(
+        'edit',
+        kind,
+        p.id,
+        detail: draft.name.trim(),
+      ),
+      before: ChangeHistory.snapshot(current),
+      after: ChangeHistory.snapshot({...current, ...fields}),
+      extra: {
+        if (extensionName != null) 'ExtensionCollection': extensionName,
+        if (extensionBefore != null) 'BeforeExtension': extensionBefore,
+        if (extensionName != null)
+          'AfterExtension': {
+            ...?extensionBefore,
+            'IdXe': p.id,
+            'SoKhung': draft.frame.trim(),
+            'SoMay': draft.engine.trim(),
+            'BienSo': draft.plate.trim(),
+            'MauSon': draft.color.trim(),
+            'GhiChu': draft.notes.trim(),
+          },
+      },
+    );
   }
 
   @override
   Future<void> archive(ProductReference p) async {
     await _connect();
+    final before = await _db
+        .collection(p.vehicle ? 'Xe' : 'SanPham')
+        .findOne(_identity(p));
     if (!p.vehicle) {
       final stock = await _db.collection('TonKhoPhuTung').findOne(_identity(p));
       if (stock?['SuaXoaDangLuu'] != null ||
@@ -132,6 +170,22 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
     if (!result.isSuccess || result.hasWriteErrors || result.nMatched != 1) {
       throw StateError('Sản phẩm đang được xử lý hoặc không còn tồn tại.');
     }
+    final kind = p.vehicle ? 'vehicleProduct' : 'partProduct';
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'product',
+      action: 'delete',
+      kind: kind,
+      parentId: p.id,
+      summary: ChangeHistory.summary(
+        'delete',
+        kind,
+        p.id,
+        detail: '${before?['TenXe'] ?? before?['TenSanPham'] ?? ''}',
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: {...ChangeHistory.snapshot(before) ?? const {}, 'DaXoa': true},
+    );
   }
 
   @override
@@ -184,6 +238,22 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
     if (!r.isSuccess || r.hasWriteErrors || r.nMatched != 1) {
       throw StateError('Sản phẩm đang được xử lý, không thể xóa.');
     }
+    final kind = p.vehicle ? 'vehicleProduct' : 'partProduct';
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'product',
+      action: 'delete',
+      kind: kind,
+      parentId: p.id,
+      summary: ChangeHistory.summary(
+        'delete',
+        kind,
+        p.id,
+        detail: '${current['TenXe'] ?? current['TenSanPham'] ?? ''}',
+      ),
+      before: ChangeHistory.snapshot(current),
+      after: {...ChangeHistory.snapshot(current) ?? const {}, 'DaXoa': true},
+    );
   }
 
   @override
@@ -346,6 +416,7 @@ class MongoProductDetailsRepository implements ProductDetailsRepository {
           },
       ],
       'TrangThaiLuu': {r'$ne': 'dang_luu'},
+      if (headerCollection == 'HoaDonBan') 'TrangThaiDon': {r'$ne': 'da_huy'},
     }).toList();
     final result = <Map<String, dynamic>>[];
     for (final header in headers) {

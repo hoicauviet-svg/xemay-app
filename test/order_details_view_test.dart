@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xemay_app/core/theme/app_theme.dart';
+import 'package:xemay_app/models/maintenance/record_maintenance.dart';
 import 'package:xemay_app/models/orders/order_details.dart';
 import 'package:xemay_app/models/repositories/order_repository.dart';
 import 'package:xemay_app/views/customers/customer_details_screen.dart';
@@ -9,6 +10,7 @@ import 'support/fake_customer_repository.dart';
 
 class _Repository extends OrderRepository {
   num due = 100000, paid = 50000;
+  String? orderStatus, orderReason;
   int saves = 0;
   final history = <Map<String, dynamic>>[];
   @override
@@ -18,6 +20,8 @@ class _Repository extends OrderRepository {
       'NgayMua': DateTime(2026, 11, 1),
       'TongThanhToan': 150000,
       'GiamGia': 10000,
+      if (orderStatus != null) 'TrangThaiDon': orderStatus,
+      if (orderReason != null) 'LyDoHuy': orderReason,
     },
     customer: {'TenKhachHang': 'Khách đơn thử', 'SoDienThoai': '0900000001'},
     lines: [
@@ -60,6 +64,60 @@ class _Repository extends OrderRepository {
 
   @override
   Future<void> close() async {}
+}
+
+class _CancelMaintenance extends RecordMaintenance {
+  int deleted = 0;
+  String? reason;
+  @override
+  Future<List<Map<String, dynamic>>> pending() async => [];
+  @override
+  Future<void> ensureReadable(RecordKind kind, int id) async {}
+  @override
+  Future<List<Map<String, dynamic>>> suggestions(
+    String collection,
+    String search,
+  ) async => [];
+  @override
+  Future<void> recover(RecordKind kind, int id) async {}
+  @override
+  Future<RecordEditData> load(RecordKind kind, int id) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> save(
+    RecordKind kind,
+    int id,
+    Map<String, dynamic> fields,
+    List<Map<String, dynamic>> lines, {
+    required String requestId,
+  }) async {}
+  @override
+  Future<void> delete(
+    RecordKind kind,
+    int id, {
+    required String requestId,
+    String? reason,
+  }) async {
+    deleted++;
+    this.reason = reason;
+  }
+
+  @override
+  Future<void> payment(
+    RecordKind kind,
+    int parentId,
+    dynamic paymentId,
+    Map<String, dynamic>? fields, {
+    required String requestId,
+    DateTime? interestStart,
+    DateTime? nextAppointment,
+  }) async {}
+}
+
+class _CancelRepository extends _Repository {
+  final audit = _CancelMaintenance();
+  @override
+  RecordMaintenance get maintenance => audit;
 }
 
 void main() {
@@ -186,4 +244,97 @@ void main() {
     expect(find.text('Lưu thanh toán'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('A cancelled order keeps its record and blocks further actions', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repo = _CancelRepository()
+      ..orderStatus = 'da_huy'
+      ..orderReason = 'Khách đổi ý';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        home: OrderDetailsScreen(orderId: 42, repository: repo),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Đã hủy'), findsOneWidget);
+    expect(
+      find.textContaining('Lịch sử thanh toán đã được xóa'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('order-cancel')), findsNothing);
+    await tester.tap(find.widgetWithText(Tab, 'Thanh toán'));
+    await tester.pumpAndSettle();
+    expect(find.text('Đơn hàng đã hủy, không thể thanh toán.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'Cancelling an order requires a detailed warning and explicit confirmation',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final repo = _CancelRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                child: const Text('Mở đơn'),
+                onPressed: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        OrderDetailsScreen(orderId: 42, repository: repo),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Mở đơn'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('order-cancel')));
+      await tester.pumpAndSettle();
+      expect(find.text('Hủy đơn hàng #42'), findsOneWidget);
+      expect(find.text('Đơn hàng đã hủy không thể hoàn tác.'), findsOneWidget);
+      expect(
+        find.text('Khách hàng không bị xóa khỏi danh sách.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Toàn bộ 0 phiếu/lịch sử thanh toán của đơn sẽ bị xóa.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('1 dòng sản phẩm sẽ được hoàn lại tồn kho (nếu có).'),
+        findsOneWidget,
+      );
+      final confirm = find.byKey(const ValueKey('order-cancel-confirm'));
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.tap(find.byKey(const ValueKey('order-cancel-ack')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('order-cancel-reason')),
+        'Khách đổi ý',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      expect(repo.audit.deleted, 1);
+      expect(repo.audit.reason, 'Khách đổi ý');
+      expect(find.text('Mở đơn'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

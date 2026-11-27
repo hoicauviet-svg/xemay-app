@@ -6,28 +6,36 @@ import 'package:xemay_app/views/maintenance/record_recovery_button.dart';
 
 class _Maintenance extends RecordMaintenance {
   int writes = 0, recoveries = 0;
-  bool fail = false;
+  bool fail = false, failLoad = false;
   final requests = <String>[];
   Map<String, dynamic>? fields;
   @override
-  Future<RecordEditData> load(RecordKind kind, int id) async => RecordEditData(
-    {
-      'NgayNhap': DateTime(2026, 1, 1),
-      'SoLuong': 2,
-      'SoTien': 100000,
-      'GhiChu': 'Lô thử',
-    },
-    [],
-    [
+  Future<RecordEditData> load(RecordKind kind, int id) async {
+    if (failLoad) {
+      throw const RecordChangeException(
+        'Phiếu có thay đổi chưa hoàn tất. Bấm Tiếp tục xử lý trước khi chỉnh tiếp.',
+      );
+    }
+    return RecordEditData(
       {
-        '_id': 'payment',
-        'IdTraNoNhapHang': 1,
-        'NgayTra': DateTime(2026, 2, 1),
-        'SoTienTra': 10000,
-        'GhiChu': 'Phiếu thử',
+        'NgayNhap': DateTime(2026, 1, 1),
+        'SoLuong': 2,
+        'SoTien': 100000,
+        'GhiChu': 'Lô thử',
       },
-    ],
-  );
+      [],
+      [
+        {
+          '_id': 'payment',
+          'IdTraNoNhapHang': 1,
+          'NgayTra': DateTime(2026, 2, 1),
+          'SoTienTra': 10000,
+          'GhiChu': 'Phiếu thử',
+        },
+      ],
+    );
+  }
+
   @override
   Future<List<Map<String, dynamic>>> suggestions(
     String collection,
@@ -44,6 +52,7 @@ class _Maintenance extends RecordMaintenance {
   @override
   Future<void> recover(RecordKind kind, int id) async {
     recoveries++;
+    failLoad = false;
   }
 
   @override
@@ -63,6 +72,7 @@ class _Maintenance extends RecordMaintenance {
     RecordKind kind,
     int id, {
     required String requestId,
+    String? reason,
   }) async {
     writes++;
   }
@@ -156,6 +166,20 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('Payment editor can continue a pending change', (tester) async {
+    final repo = _Maintenance()..failLoad = true;
+    await tester.pumpWidget(_actionsHarness(repo, () async {}));
+    await tester.tap(find.byTooltip('Xóa phiếu trả nợ'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('chưa hoàn tất'), findsOneWidget);
+    expect(find.byKey(const ValueKey('record-recover')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('record-recover')));
+    await tester.pumpAndSettle();
+    expect(repo.recoveries, 1);
+    expect(find.byType(RecordEditor), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Delete repayment requires explicit confirmation', (
     tester,
   ) async {

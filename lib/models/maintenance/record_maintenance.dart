@@ -52,7 +52,12 @@ abstract class RecordMaintenance {
     Map<String, dynamic> cost, {
     required String requestId,
   }) async => throw UnimplementedError();
-  Future<void> delete(RecordKind kind, int id, {required String requestId});
+  Future<void> delete(
+    RecordKind kind,
+    int id, {
+    required String requestId,
+    String? reason,
+  });
   Future<void> payment(
     RecordKind kind,
     int parentId,

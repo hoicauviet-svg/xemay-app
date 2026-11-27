@@ -118,6 +118,17 @@ Future<void> main() async {
           true,
       'Missing recoverable record',
     );
+    final deleteHistory = await db.collection('_change_history').findOne({
+      'Action': 'delete',
+      'Kind': 'customer',
+      'ParentId': firstId,
+    });
+    check(
+      deleteHistory != null &&
+          deleteHistory['RequestId'] is String &&
+          (deleteHistory['Before'] as Map?)?['IdKH'] == firstId,
+      'Missing edit/delete audit history',
+    );
     await Future.wait([
       repository.create(CustomerDraft()..name = 'Khách A'),
       repository.create(CustomerDraft()..name = 'Khách B'),

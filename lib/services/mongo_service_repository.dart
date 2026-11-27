@@ -1,4 +1,5 @@
 import 'package:mongo_dart/mongo_dart.dart';
+import 'change_history.dart';
 import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/services/service_models.dart';
@@ -68,6 +69,7 @@ class MongoServiceRepository implements ServiceRepository {
       throw const ServiceException('Tên hoặc giá dịch vụ không hợp lệ.');
     }
     await _connect();
+    final before = await _db.collection('DichVu').findOne({'_id': id});
     final row = await _db
         .collection('DichVu')
         .findAndModify(
@@ -87,12 +89,28 @@ class MongoServiceRepository implements ServiceRepository {
           returnNew: true,
         );
     if (row == null) throw const ServiceException('Dịch vụ không còn tồn tại.');
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'service',
+      action: 'edit',
+      kind: 'service',
+      parentId: id,
+      summary: ChangeHistory.summary(
+        'edit',
+        'service',
+        id,
+        detail: draft.name.trim(),
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: ChangeHistory.snapshot(row),
+    );
     return ServiceItem.fromMap(row);
   }
 
   @override
   Future<void> delete(String id) async {
     await _connect();
+    final before = await _db.collection('DichVu').findOne({'_id': id});
     final r = await _db
         .collection('DichVu')
         .updateOne(
@@ -107,6 +125,21 @@ class MongoServiceRepository implements ServiceRepository {
     if (!r.isSuccess || r.hasWriteErrors || r.nMatched != 1) {
       throw const ServiceException('Không xóa được dịch vụ.');
     }
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'service',
+      action: 'delete',
+      kind: 'service',
+      parentId: id,
+      summary: ChangeHistory.summary(
+        'delete',
+        'service',
+        id,
+        detail: '${before?['TenDichVu'] ?? ''}',
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: {...ChangeHistory.snapshot(before) ?? const {}, 'DaXoa': true},
+    );
   }
 
   @override

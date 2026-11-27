@@ -217,6 +217,57 @@ void main() {
     },
   );
 
+  test(
+    'Lot header can be stored before product details and completed later',
+    () {
+      final controller = GoodsReceiptController(ReceiptProductType.part);
+      addTearDown(controller.dispose);
+      controller.setMode(ReceiptMode.batch);
+      controller.updateBatch((batch) {
+        batch.quantity = '5';
+        batch.totalAmount = '1000000';
+        batch.paidAmount = '200000';
+        batch.deliveredBy = 'Người giao thử';
+        batch.origin = 'Nhà cung cấp thử';
+        batch.partnerId = 'partner-test';
+        batch.carrierId = 'carrier-test';
+      });
+      expect(controller.showProductForm, isFalse);
+      expect(controller.validate(), contains('hoàn tất thông tin lô'));
+      final receipt = controller.preview(batchOnly: true);
+      expect(receipt.mode, ReceiptMode.batch);
+      expect(receipt.lines, isEmpty);
+      expect(receipt.batchInfo!.quantity, 5);
+      expect(receipt.batchInfo!.totalAmount, 1000000);
+      expect(receipt.batchInfo!.remainingAmount, 800000);
+      expect(receipt.total, 0);
+    },
+  );
+
+  test('Blank lot rows are ignored so details can be added later', () {
+    final controller = GoodsReceiptController(ReceiptProductType.part);
+    addTearDown(controller.dispose);
+    controller.setMode(ReceiptMode.batch);
+    prepareBatch(controller, quantity: '5', total: '1000000');
+    expect(controller.lines.length, 1);
+    expect(controller.hasDetailLines, isFalse);
+    expect(controller.totalQuantity, 0);
+    expect(controller.validate(), isNull);
+    expect(controller.preview().lines, isEmpty);
+    controller.addLine();
+    expect(controller.lines.length, 2);
+    controller.updateLine(controller.lines.last, (line) {
+      line.name = 'Nhớt';
+      line.quantity = '2';
+      line.unitPrice = '250000';
+    });
+    expect(controller.hasDetailLines, isTrue);
+    expect(controller.totalQuantity, 2);
+    expect(controller.total, 500000);
+    final receipt = controller.preview();
+    expect(receipt.lines.single.name, 'Nhớt');
+  });
+
   test('Missing name, price and zero part quantities cannot be previewed', () {
     final controller = GoodsReceiptController(ReceiptProductType.part);
     addTearDown(controller.dispose);

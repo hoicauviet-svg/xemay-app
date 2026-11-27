@@ -468,3 +468,33 @@ còn sót, header lệch sổ nợ), rồi bấm **Thực thi** để chạy ph�
 kế hoạch theo đúng cơ chế của ứng dụng, giải phóng khóa và cập nhật header hợp
 lệ. Kế hoạch xóa đơn dở dang không tự hoàn tất mà phải dùng **Tiếp tục xử lý**.
 File không chứa Id cụ thể nên dùng được cho dữ liệu của từng máy khách.
+
+## Lịch sử sửa/xóa
+
+Mỗi thao tác sửa hoặc xóa do người dùng thực hiện được ghi vào collection
+`_change_history`: thời gian, hành động, loại phiếu, mã đối tượng, máy, nền tảng,
+phiên bản ứng dụng, mã yêu cầu, trạng thái trước/sau và danh sách bước đã ghi.
+Các luồng đơn hàng, lô hàng, cầm đồ, vay vốn, nợ cũ, thu chi, dòng sản phẩm,
+phiếu trả nợ và chi phí đi qua `MongoRecordMaintenance`; khách hàng, dịch vụ,
+đối tác/vận chuyển, sản phẩm, danh mục thu/chi và gộp khách hàng ghi trực tiếp
+từ repository tương ứng.
+
+Tab **Cài đặt → Lịch sử** hiển thị 200 thay đổi gần nhất, tìm theo đối tượng,
+nội dung, máy hoặc mã yêu cầu. Bấm một dòng để xem JSON trước/sau và các bước đã
+ghi. Mã yêu cầu dùng để đối chiếu `_record_changes` và
+`_record_change_backups` khi cần sửa chữa dữ liệu. Lịch sử chỉ đọc và không chặn
+thao tác của người dùng nếu việc ghi lịch sử gặp lỗi.
+
+### Hủy đơn hàng
+
+Nút **Hủy đơn hàng** trên chi tiết đơn thay cho thao tác xóa trước đây. Đơn hàng
+được giữ lại với `TrangThaiDon = da_huy`; chi tiết sản phẩm và khách hàng vẫn còn,
+chỉ sổ nợ và lịch sử thanh toán bị xóa, sản phẩm được hoàn lại tồn kho. Hộp thoại
+xác nhận nêu rõ các hệ quả và người dùng phải đánh dấu ô đã kiểm tra kỹ trước khi
+nút hủy được bật. Đơn đã hủy không thể sửa, xóa dòng hay thanh toán; vẫn xem lại
+được trong danh sách khách hàng với trạng thái **Đã hủy**. Lý do hủy được lưu ở
+`LyDoHuy` và hiển thị lại trong chi tiết đơn, lịch sử thay đổi và ghi chú báo cáo.
+Báo cáo doanh thu/công nợ mặc định chỉ tính đơn **Hoàn thành**; tab Báo cáo bán
+hàng có ô chọn **Tất cả / Hoàn thành / Đã hủy** (mặc định Hoàn thành). Lịch sử bán
+của sản phẩm loại trừ đơn đã hủy. Lịch sử thay đổi ghi hành động `cancel` để phân
+biệt với xóa phiếu thông thường.

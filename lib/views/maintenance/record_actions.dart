@@ -41,11 +41,15 @@ class RecordActions extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined, size: 20),
           ),
           IconButton(
-            tooltip: paymentId == null ? 'Xóa phiếu' : 'Xóa phiếu trả nợ',
+            tooltip: paymentId == null
+                ? (kind == RecordKind.order ? 'Hủy đơn hàng' : 'Xóa phiếu')
+                : 'Xóa phiếu trả nợ',
             onPressed: onSelect == null ? null : () => onSelect!(true),
-            icon: const Icon(
-              Icons.delete_outline,
-              color: Color(0xFFB44141),
+            icon: Icon(
+              paymentId == null && kind == RecordKind.order
+                  ? Icons.cancel_outlined
+                  : Icons.delete_outline,
+              color: const Color(0xFFB44141),
               size: 20,
             ),
           ),
@@ -89,6 +93,8 @@ class _RecordEditorState extends State<RecordEditor> {
   Map<String, dynamic>? _payment;
   Map<String, dynamic>? _header;
   bool _loading = true, _saving = false, _locked = false;
+  bool _cancelAcknowledged = false;
+  final _cancelReason = TextEditingController();
   String? _error;
   String _request = ObjectId().oid;
   bool get isPayment => widget.paymentId != null;
@@ -147,6 +153,13 @@ class _RecordEditorState extends State<RecordEditor> {
         ];
       }
       setState(() => _loading = false);
+    } on RecordChangeException catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = error.message;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -154,6 +167,34 @@ class _RecordEditorState extends State<RecordEditor> {
           _error = 'Không tải được thông tin phiếu. Đóng và mở lại để thử lại.';
         });
       }
+    }
+  }
+
+  Future<void> _recover() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.repository.recover(widget.kind, widget.id);
+      if (!mounted) return;
+      if (widget.onSaved != null) {
+        await widget.onSaved!();
+      } else if (widget.embedded) {
+        widget.onCancel?.call();
+      } else {
+        Navigator.pop(context, true);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error is RecordChangeException
+              ? error.message
+              : 'Chưa xử lý được thay đổi dang dở. Vui lòng thử lại.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -186,6 +227,7 @@ class _RecordEditorState extends State<RecordEditor> {
 
   @override
   void dispose() {
+    _cancelReason.dispose();
     for (final controller in _text.values) {
       controller.dispose();
     }
@@ -265,6 +307,11 @@ class _RecordEditorState extends State<RecordEditor> {
       );
   Future<void> _save() async {
     if (_saving || !_form.currentState!.validate()) return;
+    if (widget.deleting &&
+        widget.kind == RecordKind.order &&
+        (!_cancelAcknowledged || _cancelReason.text.trim().isEmpty)) {
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -285,6 +332,9 @@ class _RecordEditorState extends State<RecordEditor> {
           widget.kind,
           widget.id,
           requestId: _request,
+          reason: widget.kind == RecordKind.order
+              ? _cancelReason.text.trim()
+              : null,
         );
       } else {
         // Untouched numeric values remain in the draft; only editable line values are copied.
@@ -314,7 +364,11 @@ class _RecordEditorState extends State<RecordEditor> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  widget.deleting ? 'Đã xóa phiếu' : 'Đã lưu thay đổi',
+                  widget.deleting
+                      ? (widget.kind == RecordKind.order
+                            ? 'Đã hủy đơn hàng'
+                            : 'Đã xóa phiếu')
+                      : 'Đã lưu thay đổi',
                 ),
               ),
             );
@@ -338,28 +392,98 @@ class _RecordEditorState extends State<RecordEditor> {
   }
 
   Future<void> _deleteInline() async {
-    final yes = await showDialog<bool>(
+    final order = widget.kind == RecordKind.order;
+    var acknowledged = false;
+    final deleted = await showDialog<String>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Xóa phiếu'),
-        content: Text(
-          widget.kind == RecordKind.pawn
-              ? 'Xóa phiếu cầm đồ #${widget.id} và toàn bộ lịch sử thu gốc, thu lãi? Dư nợ và báo cáo sẽ thay đổi. Không thể hoàn tác từ màn hình này.'
-              : 'Xóa phiếu này và cập nhật các số liệu liên quan?',
+      barrierDismissible: false,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(order ? 'Hủy đơn hàng' : 'Xóa phiếu'),
+          content: SizedBox(
+            width: 540,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    order
+                        ? 'Hủy đơn hàng #${widget.id}. Vui lòng kiểm tra kỹ:'
+                        : widget.kind == RecordKind.pawn
+                        ? 'Xóa phiếu cầm đồ #${widget.id} và toàn bộ lịch sử thu gốc, thu lãi? Dư nợ và báo cáo sẽ thay đổi. Không thể hoàn tác từ màn hình này.'
+                        : 'Xóa phiếu này và cập nhật các số liệu liên quan?',
+                  ),
+                  if (order) ...[
+                    const SizedBox(height: 14),
+                    _cancelLine(
+                      Icons.block,
+                      'Đơn hàng đã hủy không thể hoàn tác.',
+                    ),
+                    _cancelLine(
+                      Icons.person_outline,
+                      'Khách hàng không bị xóa khỏi danh sách.',
+                    ),
+                    _cancelLine(
+                      Icons.receipt_long_outlined,
+                      'Toàn bộ lịch sử thanh toán của đơn sẽ bị xóa.',
+                    ),
+                    _cancelLine(
+                      Icons.inventory_2_outlined,
+                      '${_lines.length} dòng sản phẩm sẽ được hoàn lại tồn kho (nếu có).',
+                    ),
+                    _cancelLine(
+                      Icons.account_balance_wallet_outlined,
+                      'Công nợ và các khoản thu lãi liên quan sẽ được cập nhật lại.',
+                    ),
+                    TextField(
+                      key: const ValueKey('record-order-cancel-reason'),
+                      controller: _cancelReason,
+                      maxLength: 1000,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Lý do hủy đơn hàng',
+                        hintText: 'Ví dụ: khách đổi ý, nhập nhầm đơn…',
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 4),
+                    CheckboxListTile(
+                      key: const ValueKey('record-order-cancel-ack'),
+                      value: acknowledged,
+                      onChanged: (value) =>
+                          setDialogState(() => acknowledged = value ?? false),
+                      title: const Text(
+                        'Tôi đã kiểm tra kỹ và hiểu hành động này.',
+                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: const Text('Quay lại'),
+            ),
+            FilledButton(
+              onPressed:
+                  order && (!acknowledged || _cancelReason.text.trim().isEmpty)
+                  ? null
+                  : () => Navigator.pop(
+                      c,
+                      order ? _cancelReason.text.trim() : '',
+                    ),
+              child: Text(order ? 'Hủy đơn hàng' : 'Xóa'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: const Text('Xóa'),
-          ),
-        ],
       ),
     );
-    if (yes != true || !mounted) return;
+    if (deleted == null || !mounted) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -369,6 +493,7 @@ class _RecordEditorState extends State<RecordEditor> {
         widget.kind,
         widget.id,
         requestId: _request,
+        reason: order ? deleted : null,
       );
       if (mounted) widget.onDeleted?.call();
     } catch (e) {
@@ -383,10 +508,23 @@ class _RecordEditorState extends State<RecordEditor> {
     }
   }
 
+  Widget _cancelLine(IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFFB44141)),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text)),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final deletingOrder = widget.deleting && widget.kind == RecordKind.order;
     final title =
-        '${widget.deleting ? 'Xóa' : 'Sửa'} ${isPayment
+        '${widget.deleting ? (deletingOrder ? 'Hủy' : 'Xóa') : 'Sửa'} ${isPayment
             ? 'phiếu trả nợ'
             : incoming
             ? 'lô hàng'
@@ -422,7 +560,7 @@ class _RecordEditorState extends State<RecordEditor> {
                                       ? 'Xóa phiếu cầm đồ #${widget.id} và toàn bộ lịch sử thu gốc, thu lãi liên quan? Dư nợ và báo cáo cầm đồ sẽ thay đổi. Không thể hoàn tác từ màn hình này.'
                                       : incoming
                                       ? 'Xóa lô hàng #${widget.id}, sản phẩm nhập và các phiếu thanh toán liên quan? Tồn kho sẽ được giảm tương ứng. Lô có xe đã bán hoặc không đủ tồn phụ tùng sẽ không được xóa.'
-                                      : 'Xóa đơn hàng #${widget.id} cùng chi tiết và các phiếu thu liên quan? Sản phẩm sẽ được hoàn lại tồn kho.',
+                                      : 'Hủy đơn hàng #${widget.id}? Không thể hoàn tác. Khách hàng không bị xóa. Toàn bộ lịch sử thanh toán của đơn sẽ bị xóa. Sản phẩm trong đơn được hoàn lại tồn kho.',
                                 ),
                               if (!widget.deleting && isPayment) ...[
                                 date('NgayTra', 'Ngày trả'),
@@ -780,6 +918,47 @@ class _RecordEditorState extends State<RecordEditor> {
                             ),
                           ),
                         ),
+                      if (_error != null && _error!.contains('chưa hoàn tất'))
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            key: const ValueKey('record-recover'),
+                            onPressed: _saving ? null : _recover,
+                            icon: const Icon(Icons.restore, size: 18),
+                            label: const Text(
+                              'Tiếp tục xử lý thay đổi dang dở',
+                            ),
+                          ),
+                        ),
+                      if (deletingOrder) ...[
+                        TextField(
+                          key: const ValueKey('record-order-cancel-reason'),
+                          controller: _cancelReason,
+                          maxLength: 1000,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Lý do hủy đơn hàng',
+                            hintText: 'Ví dụ: khách đổi ý, nhập nhầm đơn…',
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                        CheckboxListTile(
+                          key: const ValueKey(
+                            'record-order-cancel-confirm-ack',
+                          ),
+                          value: _cancelAcknowledged,
+                          onChanged: _saving
+                              ? null
+                              : (value) => setState(
+                                  () => _cancelAcknowledged = value ?? false,
+                                ),
+                          title: const Text(
+                            'Tôi đã kiểm tra kỹ và hiểu hành động này.',
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ],
                       Row(
                         children: [
                           if (widget.embedded && !isPayment && !widget.deleting)
@@ -788,8 +967,16 @@ class _RecordEditorState extends State<RecordEditor> {
                                   _saving || _draft['_ManagedCash'] == true
                                   ? null
                                   : _deleteInline,
-                              icon: const Icon(Icons.delete_outline),
-                              label: const Text('Xóa phiếu'),
+                              icon: Icon(
+                                widget.kind == RecordKind.order
+                                    ? Icons.cancel_outlined
+                                    : Icons.delete_outline,
+                              ),
+                              label: Text(
+                                widget.kind == RecordKind.order
+                                    ? 'Hủy đơn hàng'
+                                    : 'Xóa phiếu',
+                              ),
                             ),
                           if (widget.onCancel != null)
                             TextButton(
@@ -798,12 +985,19 @@ class _RecordEditorState extends State<RecordEditor> {
                             ),
                           const Spacer(),
                           FilledButton.icon(
-                            onPressed: _saving || _draft['_ManagedCash'] == true
+                            onPressed:
+                                _saving ||
+                                    _draft['_ManagedCash'] == true ||
+                                    (deletingOrder &&
+                                        (!_cancelAcknowledged ||
+                                            _cancelReason.text.trim().isEmpty))
                                 ? null
                                 : _save,
                             icon: Icon(
                               widget.deleting
-                                  ? Icons.delete_outline
+                                  ? (deletingOrder
+                                        ? Icons.cancel_outlined
+                                        : Icons.delete_outline)
                                   : Icons.save_outlined,
                             ),
                             label: Text(
@@ -812,7 +1006,9 @@ class _RecordEditorState extends State<RecordEditor> {
                                   : _locked
                                   ? 'Thử lại'
                                   : widget.deleting
-                                  ? 'Xác nhận xóa'
+                                  ? (deletingOrder
+                                        ? 'Xác nhận hủy'
+                                        : 'Xác nhận xóa')
                                   : 'Lưu thay đổi',
                             ),
                           ),

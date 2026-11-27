@@ -341,7 +341,12 @@ class StuckOrderRepair implements StuckOrderRunner {
         continue;
       }
       if (debt == null) {
-        context.block('Không tìm thấy sổ nợ của đơn.');
+        if (entry.value.any((plan) => plan['Action'] == 'cancel')) {
+          context.recoverNeeded = true;
+          context.action('Hoàn tất hủy đơn #$orderId đang dở dang.');
+        } else {
+          context.block('Không tìm thấy sổ nợ của đơn.');
+        }
         continue;
       }
       for (final plan in entry.value) {

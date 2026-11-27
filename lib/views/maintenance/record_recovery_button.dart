@@ -117,7 +117,9 @@ class _RecoveryViewState extends State<_RecoveryView> {
                               }} #${row['Parent']}',
                             ),
                             subtitle: Text(
-                              row['DeleteParent'] == true
+                              row['Action'] == 'cancel'
+                                  ? 'Đang hủy đơn hàng'
+                                  : row['DeleteParent'] == true
                                   ? 'Đang xóa phiếu'
                                   : 'Đang cập nhật phiếu',
                             ),

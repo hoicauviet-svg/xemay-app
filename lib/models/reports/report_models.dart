@@ -65,6 +65,15 @@ enum ReportProductGroup {
   final String label;
 }
 
+enum ReportOrderStatus {
+  all('Tất cả'),
+  completed('Hoàn thành'),
+  cancelled('Đã hủy');
+
+  const ReportOrderStatus(this.label);
+  final String label;
+}
+
 class ReportColumn {
   const ReportColumn(this.label, {this.money = false, this.width = 150});
   final String label;
@@ -325,6 +334,7 @@ class ReportCalculator {
     required ReportRange range,
     required Map<String, List<Map<String, dynamic>>> source,
     DateTime? now,
+    ReportOrderStatus orderStatus = ReportOrderStatus.completed,
   }) {
     final timestamp = now ?? DateTime.now();
     final today = financeDay(timestamp);
@@ -537,9 +547,16 @@ class ReportCalculator {
     for (final row in table('SoNo')) {
       debts.putIfAbsent(row['IdHoaDon'], () => []).add(row);
     }
-    final orders = table(
-      'HoaDonBan',
-    ).where((r) => r['TrangThaiLuu'] != 'dang_luu').toList();
+    final includeAll = orderStatus == ReportOrderStatus.all;
+    final cancelledOrders = orderStatus == ReportOrderStatus.cancelled;
+    final orders = table('HoaDonBan')
+        .where(
+          (r) =>
+              r['TrangThaiLuu'] != 'dang_luu' &&
+              (includeAll ||
+                  (r['TrangThaiDon'] == 'da_huy') == cancelledOrders),
+        )
+        .toList();
     final periodOrders = orders.where((r) => range.contains(r['NgayMua']));
     final salesRows = <List<dynamic>>[],
         salesSums = List.generate(9, (_) => _Sum());
@@ -572,11 +589,17 @@ class ReportCalculator {
           'DonGiaHienThi': vehicles[header['IdXe']]!['GiaBan'],
         });
       }
+      final headerDebt = {
+        'SoTienDaTra': header['SoTienDaTra'],
+        'SoTienConNo': header['SoTienConNo'],
+      };
       return OrderDetails(
         header: header,
         customer: null,
         lines: detailLines,
-        debts: debts[header['IdHoaDon']] ?? [],
+        debts:
+            debts[header['IdHoaDon']] ??
+            (header['TrangThaiDon'] == 'da_huy' ? [headerDebt] : const []),
         payments: [],
       );
     }
@@ -1256,6 +1279,11 @@ class ReportCalculator {
             '$missingSales đơn chưa đủ số liệu. Ô trống và tổng để trống khi thiếu dữ liệu.',
           if (salesSums[8].missing > 0)
             '${salesSums[8].missing} đơn chưa xác định lợi nhuận do thiếu doanh thu, giá nhập hoặc chi phí. Lợi nhuận đã xác định chỉ cộng các đơn đủ dữ liệu; không coi giá vốn thiếu là 0.',
+          if (orderStatus != ReportOrderStatus.completed)
+            for (final header in periodOrders)
+              if (header['TrangThaiDon'] == 'da_huy' &&
+                  '${header['LyDoHuy'] ?? ''}'.trim().isNotEmpty)
+                'Đơn #${header['IdHoaDon']} đã hủy: ${'${header['LyDoHuy']}'.trim()}',
         ],
       ),
       ReportKind.receipts: ReportSection(
@@ -1536,7 +1564,7 @@ class ReportCalculator {
       receiptDetails: receiptDetails,
       customerAging: customerAging,
       pawnAging: pawnAging,
-      cashflow: _cashflow(range, source),
+      cashflow: _cashflow(range, source, orderStatus),
     );
     final pending = source.values
         .expand((rows) => rows)
@@ -1597,12 +1625,15 @@ class ReportCalculator {
   static ReportCashflow _cashflow(
     ReportRange range,
     Map<String, List<Map<String, dynamic>>> source,
+    ReportOrderStatus orderStatus,
   ) {
     List<Map<String, dynamic>> table(String name) => source[name] ?? [];
     List<Map<String, dynamic>> inPeriod(String name, String dateKey) =>
         table(name).where((row) => range.contains(row[dateKey])).toList();
     num? sum(Iterable<dynamic> values) => _sumValues(values);
 
+    final includeAll = orderStatus == ReportOrderStatus.all;
+    final cancelledOrders = orderStatus == ReportOrderStatus.cancelled;
     final debtById = {for (final debt in table('SoNo')) debt['IdSoNo']: debt};
     final saleCreationPaymentsByInvoice = <dynamic, _Sum>{};
     for (final payment in inPeriod('TraNo', 'NgayTra')) {
@@ -1646,7 +1677,11 @@ class ReportCalculator {
     }
 
     for (final invoice in inPeriod('HoaDonBan', 'NgayMua')) {
-      if (invoice['TrangThaiLuu'] == 'dang_luu') continue;
+      if (invoice['TrangThaiLuu'] == 'dang_luu' ||
+          (!includeAll &&
+              (invoice['TrangThaiDon'] == 'da_huy') != cancelledOrders)) {
+        continue;
+      }
       final recordedPaid = _number(invoice['SoTienDaTra']);
       final initialPayment =
           saleCreationPaymentsByInvoice[invoice['IdHoaDon']]?.total;

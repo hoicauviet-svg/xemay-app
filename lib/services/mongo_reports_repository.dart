@@ -36,7 +36,10 @@ class MongoReportsRepository implements ReportsRepository {
       )
       .toList();
   @override
-  Future<ReportsData> load(ReportRange range) async {
+  Future<ReportsData> load(
+    ReportRange range, {
+    ReportOrderStatus orderStatus = ReportOrderStatus.completed,
+  }) async {
     await _connect();
     if (await _db.collection('_record_changes').findOne({
           'State': {
@@ -74,21 +77,33 @@ class MongoReportsRepository implements ReportsRepository {
       'TraNoVayVon',
     ];
     final rows = await Future.wait([
-      _read('HoaDonBan', [
-        'IdHoaDon',
-        'IdXe',
-        'IdKH',
-        'IdSanPham',
-        'NgayMua',
-        'NgayHen',
-        'PhienBanBanHang',
-        'TongTienHang',
-        'GiamGia',
-        'TongThanhToan',
-        'SoTienDaTra',
-        'SoTienKhachDua',
-        'TrangThaiLuu',
-      ]),
+      _read(
+        'HoaDonBan',
+        [
+          'IdHoaDon',
+          'IdXe',
+          'IdKH',
+          'IdSanPham',
+          'NgayMua',
+          'NgayHen',
+          'PhienBanBanHang',
+          'TongTienHang',
+          'GiamGia',
+          'TongThanhToan',
+          'SoTienDaTra',
+          'SoTienKhachDua',
+          'TrangThaiLuu',
+          'TrangThaiDon',
+          'LyDoHuy',
+        ],
+        filter: {
+          'TrangThaiLuu': {r'$ne': 'dang_luu'},
+          if (orderStatus == ReportOrderStatus.cancelled)
+            'TrangThaiDon': 'da_huy',
+          if (orderStatus == ReportOrderStatus.completed)
+            'TrangThaiDon': {r'$ne': 'da_huy'},
+        },
+      ),
       _read('ChiTietHoaDonBan', [
         'GiaNhap',
         'TenSanPham',
@@ -244,6 +259,7 @@ class MongoReportsRepository implements ReportsRepository {
     return ReportCalculator.build(
       range: range,
       source: {for (var i = 0; i < names.length; i++) names[i]: rows[i]},
+      orderStatus: orderStatus,
     );
   }
 

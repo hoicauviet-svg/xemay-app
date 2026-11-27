@@ -15,6 +15,7 @@ class ReportsController extends ChangeNotifier {
   int _request = 0;
   String? error;
   String cashType = 'all';
+  ReportOrderStatus orderStatus = ReportOrderStatus.completed;
   ReportProductGroup salesGroup = ReportProductGroup.all,
       receiptsGroup = ReportProductGroup.all;
   void setProductGroup(ReportKind kind, ReportProductGroup group) {
@@ -61,6 +62,12 @@ class ReportsController extends ChangeNotifier {
     return source;
   }
 
+  void setOrderStatus(ReportOrderStatus value) {
+    if (orderStatus == value) return;
+    orderStatus = value;
+    load();
+  }
+
   void setCashType(String value) {
     if (!['all', 'income', 'expense'].contains(value)) {
       throw ArgumentError.value(value);
@@ -77,7 +84,7 @@ class ReportsController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final result = await repository.load(range);
+      final result = await repository.load(range, orderStatus: orderStatus);
       if (_disposed || request != _request) return;
       data = result;
     } catch (e) {

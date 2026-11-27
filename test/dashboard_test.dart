@@ -1,5 +1,7 @@
+import 'package:xemay_app/core/app_version.dart';
 import 'package:xemay_app/core/config/database_config.dart';
 import 'package:xemay_app/models/settings/database_settings.dart';
+import 'package:xemay_app/views/about/about_tab.dart';
 import 'support/fake_batch_repository.dart';
 import 'support/fake_directory_repository.dart';
 import 'support/fake_database_settings_repository.dart';
@@ -129,6 +131,48 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('About tab sits below settings and keeps version information', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final settingsRepository = FakeDatabaseSettingsRepository()
+      ..settings = DatabaseSettings(
+        mongoUri: 'mongodb://local/XM',
+        dailyReminderAt: DateTime.now(),
+      );
+    await tester.pumpWidget(
+      StoreApp(
+        databaseSettingsRepositoryFactory: () => settingsRepository,
+        salesRepositoryFactory: FakeSalesRepository.new,
+        inventoryRepositoryFactory: FakeInventoryRepository.new,
+        serviceRepositoryFactory: FakeServiceRepository.new,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final settingsTile = find.text('Cài đặt').first;
+    final aboutTile = find.text('Giới thiệu').first;
+    expect(settingsTile, findsOneWidget);
+    expect(aboutTile, findsOneWidget);
+    expect(
+      tester.getTopLeft(aboutTile).dy,
+      greaterThan(tester.getTopLeft(settingsTile).dy),
+    );
+    await tester.tap(aboutTile);
+    await tester.pumpAndSettle();
+    expect(find.byType(AboutTab), findsOneWidget);
+    expect(find.text(websiteUrl), findsOneWidget);
+    expect(find.text(collectionUrl), findsOneWidget);
+    expect(find.text(supportUrl), findsOneWidget);
+    expect(
+      find.text('Phiên bản hiện tại: ${AppVersion.label}'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Nhập hàng opens receipt tabs for each product type', (
     tester,

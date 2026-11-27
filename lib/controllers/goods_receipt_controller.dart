@@ -108,12 +108,41 @@ class GoodsReceiptController extends ChangeNotifier {
   ReceiptMode get mode => _mode;
   List<ReceiptLineDraft> get lines =>
       List.unmodifiable(_mode == ReceiptMode.single ? _single : _batch);
+
+  /// A lot row that the user never touched must not block saving the lot.
+  /// Product details can be added later from the lot details screen.
+  static bool _blankLine(ReceiptLineDraft line) =>
+      line.name.trim().isEmpty &&
+      line.quantity == '1' &&
+      line.unitPrice.trim().isEmpty &&
+      line.salePrice.trim().isEmpty &&
+      line.productCode.trim().isEmpty &&
+      line.frameNumber.trim().isEmpty &&
+      line.engineNumber.trim().isEmpty &&
+      line.plate.trim().isEmpty &&
+      line.color.trim().isEmpty &&
+      line.vehicleNotes.trim().isEmpty &&
+      line.registrationFee.trim().isEmpty &&
+      line.brandId == null &&
+      line.costs.isEmpty;
+
+  /// True when a lot row has not been touched yet.
+  bool isBlankLine(ReceiptLineDraft line) => _blankLine(line);
+
+  /// Rows that actually carry detail data. Blank lot rows are ignored so a
+  /// header-only lot can be stored now and completed later.
+  List<ReceiptLineDraft> get _detailLines => _mode == ReceiptMode.batch
+      ? _batch.where((line) => !_blankLine(line)).toList(growable: false)
+      : _single;
+  bool get hasDetailLines => _detailLines.isNotEmpty;
+
   int quantityOf(ReceiptLineDraft line) =>
       type.isVehicle ? 1 : int.tryParse(line.quantity.trim()) ?? 0;
   int amountOf(ReceiptLineDraft line) =>
       quantityOf(line) * (int.tryParse(line.unitPrice.trim()) ?? 0);
-  int get total => lines.fold(0, (sum, line) => sum + amountOf(line));
-  int get totalQuantity => lines.fold(0, (sum, line) => sum + quantityOf(line));
+  int get total => _detailLines.fold(0, (sum, line) => sum + amountOf(line));
+  int get totalQuantity =>
+      _detailLines.fold(0, (sum, line) => sum + quantityOf(line));
 
   void setMode(ReceiptMode mode) {
     if (_mode == mode) return;
@@ -250,7 +279,7 @@ class GoodsReceiptController extends ChangeNotifier {
       }
     }
     final frames = <String>{}, engines = <String>{};
-    for (final line in lines) {
+    for (final line in _detailLines) {
       if (line.name.trim().isEmpty) {
         return 'Vui lòng nhập tên cho từng dòng hàng.';
       }
@@ -289,9 +318,12 @@ class GoodsReceiptController extends ChangeNotifier {
     return null;
   }
 
-  ReceiptPreview preview() {
-    final error = validate();
+  /// Builds the receipt to persist. Passing [batchOnly] stores the lot header
+  /// alone, without requiring the product details step to be confirmed.
+  ReceiptPreview preview({bool batchOnly = false}) {
+    final error = batchOnly ? validateBatch() : validate();
     if (error != null) throw StateError(error);
+    final detailLines = batchOnly ? const <ReceiptLineDraft>[] : _detailLines;
     return ReceiptPreview(
       type: type,
       batchId: targetBatchId,
@@ -311,7 +343,7 @@ class GoodsReceiptController extends ChangeNotifier {
       batchInfo: mode == ReceiptMode.batch ? batchInfo : null,
       notes: notes.trim(),
       lines: [
-        for (final line in lines)
+        for (final line in detailLines)
           ReceiptLine(
             costs: List.unmodifiable(
               line.costs.map(

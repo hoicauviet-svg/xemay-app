@@ -67,6 +67,9 @@ class MongoReceiptRepository implements ReceiptRepository {
     final journal = _db.collection('GiaoDichNhapHang');
     var plan = await journal.findOne({'_id': requestId});
     if (plan == null) {
+      if (receipt.lines.isEmpty && receipt.batchInfo == null) {
+        throw ArgumentError('Phiếu nhập chưa có sản phẩm');
+      }
       for (final entry in {
         'DoiTac': receipt.partnerId ?? receipt.batchInfo?.partnerId,
         'VanChuyen': receipt.carrierId ?? receipt.batchInfo?.carrierId,

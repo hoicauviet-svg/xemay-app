@@ -25,6 +25,7 @@ class SalesController extends ChangeNotifier {
   bool get editingLocked => saving || awaitingConfirmation;
   Map<String, dynamic>? customer;
   String customerQuery = '', discountText = '', paidText = '', notes = '';
+  int draftServiceSubtotal = 0;
   String? customerError;
   DateTime date = DateTime.now();
   DateTime? paymentDueDate, interestDate;
@@ -68,16 +69,25 @@ class SalesController extends ChangeNotifier {
       : RegExp(r'^\d+$').hasMatch(text.trim())
       ? int.tryParse(text.trim())
       : null;
-  int? get subtotal =>
-      cart.items.any(
-        (i) =>
-            i.unitPrice == null ||
-            i.unitPrice! < 0 ||
-            i.quantity < 1 ||
-            i.unitPrice! > SaleDraft.maxMoney ~/ i.quantity,
-      )
-      ? null
-      : cart.items.fold<int>(0, (sum, i) => sum + i.total!);
+  int? get subtotal {
+    final valid = !cart.items.any(
+      (i) =>
+          i.unitPrice == null ||
+          i.unitPrice! < 0 ||
+          i.quantity < 1 ||
+          i.unitPrice! > SaleDraft.maxMoney ~/ i.quantity,
+    );
+    if (!valid) return null;
+    return cart.items.fold<int>(0, (sum, i) => sum + i.total!) +
+        draftServiceSubtotal;
+  }
+
+  void setDraftServiceSubtotal(int value) {
+    if (draftServiceSubtotal == value) return;
+    draftServiceSubtotal = value;
+    notifyListeners();
+  }
+
   int? get discount => _amount(discountText);
   int? get paid => _amount(paidText);
   String? get discountError => discount == null || discount! < 0
@@ -374,6 +384,7 @@ class SalesController extends ChangeNotifier {
     discountText = '';
     paidText = '';
     notes = '';
+    draftServiceSubtotal = 0;
     date = DateTime.now();
     paymentDueDate = null;
     interestDate = null;

@@ -288,6 +288,9 @@ class MongoOrderRepository implements OrderRepository {
     if (header == null) {
       throw const OrderException('Đơn hàng không còn tồn tại.');
     }
+    if (header['TrangThaiDon'] == 'da_huy') {
+      throw const OrderException('Đơn hàng đã hủy, không thể thanh toán.');
+    }
     final debts = await _db.collection('SoNo').find({
       'IdHoaDon': orderId,
     }).toList();

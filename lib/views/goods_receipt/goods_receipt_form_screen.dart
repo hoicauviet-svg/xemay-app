@@ -126,31 +126,45 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
     });
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool batchOnly = false}) async {
     if (_saving) return;
     if (_pendingReceipt == null) {
       if (!_formKey.currentState!.validate()) return;
-      final error = _controller.validate();
+      final error = batchOnly
+          ? _controller.validateBatch()
+          : _controller.validate();
       if (error != null) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(error)));
         return;
       }
-      _pendingReceipt = _controller.preview();
+      _pendingReceipt = _controller.preview(batchOnly: batchOnly);
     }
     setState(() => _saving = true);
     try {
       await _receiptRepository.save(_pendingReceipt!, _requestId);
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
+      final savedBatchOnly =
+          _pendingReceipt!.batchInfo != null && _pendingReceipt!.lines.isEmpty;
       Navigator.pop(context, true);
-      messenger.showSnackBar(const SnackBar(content: Text('Nhập thành công')));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            savedBatchOnly
+                ? 'Đã lưu lô. Có thể bổ sung sản phẩm sau trong chi tiết lô.'
+                : 'Nhập thành công',
+          ),
+        ),
+      );
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Chưa hoàn tất lưu. Bấm Lưu để thử lại phiếu này.'),
+            content: Text(
+              'Chưa hoàn tất lưu. Bấm nút lưu để thử lại phiếu này.',
+            ),
           ),
         );
       }
@@ -209,47 +223,56 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
                   ),
                 ],
                 const Divider(height: 28),
-                for (final line in receipt.lines)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          line.name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          '${quantity(line.quantity)} × ${money(line.unitPrice)} = ${money(line.amount)}',
-                        ),
+                if (receipt.lines.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      'Chưa nhập sản phẩm chi tiết. Có thể bổ sung sau khi lưu lô.',
+                    ),
+                  )
+                else ...[
+                  for (final line in receipt.lines)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            line.name,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            '${quantity(line.quantity)} × ${money(line.unitPrice)} = ${money(line.amount)}',
+                          ),
 
-                        if (line.productCode.isNotEmpty)
-                          Text('Mã sản phẩm: ${line.productCode}'),
-                        Text('Đơn vị tính: ${line.unit}'),
-                        if (line.salePrice != null)
-                          Text('Giá bán: ${money(line.salePrice)}'),
-                        Text('Tổng chi phí: ${money(line.totalCosts)}'),
-                        if (line.vehicleNotes.isNotEmpty)
-                          Text('Ghi chú xe: ${line.vehicleNotes}'),
-                        if (line.frameNumber.isNotEmpty)
-                          Text('Số khung: ${line.frameNumber}'),
-                        if (line.engineNumber.isNotEmpty)
-                          Text('Số máy: ${line.engineNumber}'),
-                        if (line.plate.isNotEmpty)
-                          Text('Biển số: ${line.plate}'),
-                        if (line.color.isNotEmpty)
-                          Text('Màu sơn: ${line.color}'),
-                      ],
+                          if (line.productCode.isNotEmpty)
+                            Text('Mã sản phẩm: ${line.productCode}'),
+                          Text('Đơn vị tính: ${line.unit}'),
+                          if (line.salePrice != null)
+                            Text('Giá bán: ${money(line.salePrice)}'),
+                          Text('Tổng chi phí: ${money(line.totalCosts)}'),
+                          if (line.vehicleNotes.isNotEmpty)
+                            Text('Ghi chú xe: ${line.vehicleNotes}'),
+                          if (line.frameNumber.isNotEmpty)
+                            Text('Số khung: ${line.frameNumber}'),
+                          if (line.engineNumber.isNotEmpty)
+                            Text('Số máy: ${line.engineNumber}'),
+                          if (line.plate.isNotEmpty)
+                            Text('Biển số: ${line.plate}'),
+                          if (line.color.isNotEmpty)
+                            Text('Màu sơn: ${line.color}'),
+                        ],
+                      ),
+                    ),
+                  const Divider(),
+                  Text(
+                    'Tổng tiền: ${money(receipt.total)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _green,
                     ),
                   ),
-                const Divider(),
-                Text(
-                  'Tổng tiền: ${money(receipt.total)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: _green,
-                  ),
-                ),
+                ],
                 if (receipt.notes.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text('Ghi chú: ${receipt.notes}'),
@@ -365,6 +388,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
                           directory: _directory,
                           onSelectDate: _selectDate,
                         ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Có thể lưu lô ngay, bỏ trống danh sách sản phẩm và bổ sung chi tiết sau.',
+                          style: TextStyle(color: _muted, fontSize: 12),
+                        ),
                       ])
                     else
                       _batchSummary(),
@@ -474,6 +502,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
           ),
         ],
       ),
+      if (!_controller.hasDetailLines)
+        const Text(
+          'Bỏ trống danh sách sản phẩm nếu muốn bổ sung chi tiết sau khi lưu lô.',
+          style: TextStyle(color: _muted, fontSize: 12),
+        ),
     ]);
   }
 
@@ -486,6 +519,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
         compact: true,
         columnSpans: columnSpans,
       );
+
+  /// Untouched lot rows are optional; their required fields may stay empty so
+  /// the lot can be stored now and completed later.
+  bool _isOptionalLine(ReceiptLineDraft line) =>
+      _controller.mode == ReceiptMode.batch && _controller.isBlankLine(line);
 
   Widget _line(ReceiptLineDraft line, int index) => Container(
     key: ValueKey('receipt-line-${line.id}'),
@@ -515,9 +553,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
             decoration: InputDecoration(
               labelText: widget.type.isVehicle ? 'Tên xe' : 'Tên phụ tùng',
             ),
-            validator: (value) => value == null || value.trim().isEmpty
-                ? 'Vui lòng nhập tên'
-                : null,
+            validator: (value) => _isOptionalLine(line)
+                ? null
+                : (value == null || value.trim().isEmpty
+                      ? 'Vui lòng nhập tên'
+                      : null),
             onChanged: (value) =>
                 _controller.updateLine(line, (draft) => draft.name = value),
           ),
@@ -536,9 +576,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
               key: ValueKey('line-unit-${line.id}'),
               initialValue: line.unit,
               decoration: const InputDecoration(labelText: 'Đơn vị tính'),
-              validator: (v) => v == null || v.trim().isEmpty
-                  ? 'Vui lòng nhập đơn vị tính'
-                  : null,
+              validator: (v) => _isOptionalLine(line)
+                  ? null
+                  : (v == null || v.trim().isEmpty
+                        ? 'Vui lòng nhập đơn vị tính'
+                        : null),
               onChanged: (v) => _controller.updateLine(line, (d) => d.unit = v),
             ),
           ],
@@ -549,9 +591,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
               decoration: const InputDecoration(labelText: 'Số lượng'),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              validator: (value) => (int.tryParse(value ?? '') ?? 0) <= 0
-                  ? 'Số lượng phải lớn hơn 0'
-                  : null,
+              validator: (value) => _isOptionalLine(line)
+                  ? null
+                  : ((int.tryParse(value ?? '') ?? 0) <= 0
+                        ? 'Số lượng phải lớn hơn 0'
+                        : null),
               onChanged: (value) => _controller.updateLine(
                 line,
                 (draft) => draft.quantity = value,
@@ -566,11 +610,12 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
             ),
             keyboardType: TextInputType.number,
             inputFormatters: [const MoneyInputFormatter()],
-            validator: (value) =>
-                int.tryParse(ungroupMoney(value ?? '')) == null ||
-                    int.parse(ungroupMoney(value ?? '')) < 0
-                ? 'Vui lòng nhập giá không âm'
-                : null,
+            validator: (value) => _isOptionalLine(line)
+                ? null
+                : (int.tryParse(ungroupMoney(value ?? '')) == null ||
+                          int.parse(ungroupMoney(value ?? '')) < 0
+                      ? 'Vui lòng nhập giá không âm'
+                      : null),
             onChanged: (value) => _controller.updateLine(
               line,
               (draft) => draft.unitPrice = ungroupMoney(value),
@@ -586,9 +631,11 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
             ),
             keyboardType: TextInputType.number,
             inputFormatters: [const MoneyInputFormatter()],
-            validator: (v) => GoodsReceiptController.optionalMoneyError(
-              ungroupMoney(v ?? ''),
-            ),
+            validator: (v) => _isOptionalLine(line)
+                ? null
+                : GoodsReceiptController.optionalMoneyError(
+                    ungroupMoney(v ?? ''),
+                  ),
             onChanged: (v) => _controller.updateLine(
               line,
               (d) => d.salePrice = ungroupMoney(v),
@@ -712,6 +759,13 @@ class _GoodsReceiptFormScreenState extends State<GoodsReceiptFormScreen> {
                     onPressed: _saving ? null : _save,
                     icon: const Icon(Icons.save_outlined, size: 18),
                     label: Text(_saving ? 'Đang lưu…' : 'Lưu'),
+                  ),
+                  const SizedBox(width: 12),
+                ] else ...[
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : () => _save(batchOnly: true),
+                    icon: const Icon(Icons.save_outlined, size: 18),
+                    label: Text(_saving ? 'Đang lưu…' : 'Lưu lô'),
                   ),
                   const SizedBox(width: 12),
                 ],

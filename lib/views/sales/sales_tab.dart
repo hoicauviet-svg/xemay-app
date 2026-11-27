@@ -183,6 +183,7 @@ class _SalesTabState extends State<SalesTab> {
     }
     final serviceError = await _commitNewServices();
     if (!mounted) return;
+    _syncDraftServiceSubtotal();
     if (serviceError != null) {
       ScaffoldMessenger.of(
         context,
@@ -812,6 +813,7 @@ class _SalesTabState extends State<SalesTab> {
     if (current != null && current.quantity != row.quantity) {
       sale.cart.setQuantity(current, row.quantity);
     }
+    _syncDraftServiceSubtotal();
     setState(() {});
   }
 
@@ -821,6 +823,7 @@ class _SalesTabState extends State<SalesTab> {
       sale.cart.remove(linked);
       row.serviceId = null;
     }
+    _syncDraftServiceSubtotal();
     setState(() {});
   }
 
@@ -830,9 +833,9 @@ class _SalesTabState extends State<SalesTab> {
     final linked = _linkedService(row);
     if (linked != null) {
       sale.cart.setQuantity(linked, quantity);
-    } else {
-      setState(() {});
     }
+    _syncDraftServiceSubtotal();
+    if (linked == null) setState(() {});
   }
 
   void _removeServiceRow(_ServiceRow row) {
@@ -841,6 +844,7 @@ class _SalesTabState extends State<SalesTab> {
     row.dispose();
     _serviceRows.remove(row);
     if (_serviceRows.isEmpty) _serviceRows.add(_ServiceRow.blank());
+    _syncDraftServiceSubtotal();
     setState(() {});
   }
 
@@ -851,10 +855,28 @@ class _SalesTabState extends State<SalesTab> {
     _serviceRows
       ..clear()
       ..add(_ServiceRow.blank());
+    sale.setDraftServiceSubtotal(0);
   }
 
   bool get _hasNamedService =>
       _serviceRows.any((row) => row.name.text.trim().isNotEmpty);
+
+  int _draftServiceSubtotal() {
+    var total = 0;
+    for (final row in _serviceRows) {
+      if (_linkedService(row) != null || row.name.text.trim().isEmpty) continue;
+      final digits = ungroupMoney(row.priceText);
+      if (!RegExp(r'^\d+$').hasMatch(digits)) continue;
+      final price = int.tryParse(digits);
+      if (price != null) total += price * row.quantity;
+    }
+    return total;
+  }
+
+  void _syncDraftServiceSubtotal() {
+    if (!mounted) return;
+    sale.setDraftServiceSubtotal(_draftServiceSubtotal());
+  }
 
   Future<String?> _commitNewServices() async {
     for (final row in _serviceRows) {
@@ -927,7 +949,12 @@ class _SalesTabState extends State<SalesTab> {
           onChanged: (value) {
             row.priceText = value;
             final current = _linkedService(row);
-            if (current != null) sale.cart.setPrice(current, value);
+            if (current != null) {
+              sale.cart.setPrice(current, value);
+            } else {
+              setState(() {});
+            }
+            _syncDraftServiceSubtotal();
           },
           validator: (_) {
             if (row.name.text.trim().isEmpty) return null;
@@ -942,6 +969,7 @@ class _SalesTabState extends State<SalesTab> {
         alignment: Alignment.centerLeft,
         child: Text(
           _amount(total ?? (parsed == null ? null : parsed * quantity)),
+          key: ValueKey('sales-total-${row.lineKey}'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -1088,15 +1116,28 @@ class _SalesTabState extends State<SalesTab> {
             spacing: 24,
             runSpacing: 12,
             children: [
-              _paymentAmount('Tiền hàng', _amount(sale.subtotal)),
+              _paymentAmount(
+                'Tiền hàng',
+                _amount(sale.subtotal),
+                valueKey: const ValueKey('sales-summary-subtotal'),
+              ),
               _paymentAmount(
                 'Tổng thanh toán',
                 _amount(sale.total),
                 prominent: true,
+                valueKey: const ValueKey('sales-summary-total'),
               ),
-              _paymentAmount('Còn phải thu', _amount(sale.due)),
+              _paymentAmount(
+                'Còn phải thu',
+                _amount(sale.due),
+                valueKey: const ValueKey('sales-summary-due'),
+              ),
               if ((sale.change ?? 0) > 0)
-                _paymentAmount('Tiền thừa trả khách', _amount(sale.change)),
+                _paymentAmount(
+                  'Tiền thừa trả khách',
+                  _amount(sale.change),
+                  valueKey: const ValueKey('sales-summary-change'),
+                ),
             ],
           );
           final actions = Wrap(
@@ -1189,26 +1230,31 @@ class _SalesTabState extends State<SalesTab> {
         ),
     ],
   );
-  Widget _paymentAmount(String label, String value, {bool prominent = false}) =>
-      Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 14, color: Color(0xFF6E7D83)),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: prominent ? _green : const Color(0xFF1D3036),
-            ),
-          ),
-        ],
-      );
+  Widget _paymentAmount(
+    String label,
+    String value, {
+    bool prominent = false,
+    Key? valueKey,
+  }) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: const TextStyle(fontSize: 14, color: Color(0xFF6E7D83)),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        value,
+        key: valueKey,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: prominent ? _green : const Color(0xFF1D3036),
+        ),
+      ),
+    ],
+  );
 }
 
 class _SaleColumn {

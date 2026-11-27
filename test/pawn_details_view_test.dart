@@ -78,6 +78,7 @@ class _Maintenance extends RecordMaintenance {
     RecordKind kind,
     int id, {
     required String requestId,
+    String? reason,
   }) async {
     deletes++;
   }

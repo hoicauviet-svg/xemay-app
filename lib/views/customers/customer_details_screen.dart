@@ -296,6 +296,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
     }
   }
 
+  String _orderStatus(Map<String, dynamic> row) =>
+      row['TrangThaiDon'] == 'da_huy' ? 'Đã hủy' : 'Hoàn thành';
+
   Future<void> _openOrder(Map<String, dynamic> row) async {
     final repository = widget.orderRepositoryFactory?.call();
     await Navigator.of(context).push<void>(
@@ -328,7 +331,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
                 contentPadding: EdgeInsets.zero,
                 title: Text('#${r['MaDonHang']} · ${_date(r['NgayDonHang'])}'),
                 subtitle: Text(
-                  '${_value(r['SanPhamHienThi'])}\nSố lượng: ${_value(r['TongSoLuong'])} · ${money(r['TongTien'])}\n${_value(r['GhiChu'])}',
+                  '${_value(r['SanPhamHienThi'])}\nSố lượng: ${_value(r['TongSoLuong'])} · ${money(r['TongTien'])} · ${_orderStatus(r)}\n${_value(r['GhiChu'])}',
                 ),
               );
             },
@@ -337,13 +340,14 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
         return ScrollableDataTable(
           fixedHeader: true,
           fitWidth: true,
-          columnWidths: const [100, 120, 260, 90, 170, 200],
+          columnWidths: const [100, 120, 240, 90, 160, 120, 180],
           columns: const [
             DataColumn(label: Text('MÃ ĐƠN')),
             DataColumn(label: Text('NGÀY')),
             DataColumn(label: Text('SẢN PHẨM')),
             DataColumn(label: Text('SỐ LƯỢNG')),
             DataColumn(label: Text('TỔNG TIỀN')),
+            DataColumn(label: Text('TRẠNG THÁI')),
             DataColumn(label: Text('GHI CHÚ')),
           ],
           rows: [
@@ -356,6 +360,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen>
                   DataCell(Text(_value(r['SanPhamHienThi']))),
                   DataCell(Text(_value(r['TongSoLuong']))),
                   DataCell(Text(money(r['TongTien']))),
+                  DataCell(
+                    Text(
+                      _orderStatus(r),
+                      style: TextStyle(
+                        color: r['TrangThaiDon'] == 'da_huy'
+                            ? const Color(0xFFB44141)
+                            : const Color(0xFF176455),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                   DataCell(Text(_value(r['GhiChu']))),
                 ],
               ),

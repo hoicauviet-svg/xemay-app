@@ -1,5 +1,6 @@
 import '../../models/repositories/database_settings_repository.dart';
 import '../../core/config/database_config.dart';
+import '../about/about_tab.dart';
 import '../settings/app_update_panel.dart';
 import '../settings/settings_tab.dart';
 import '../settings/cloud_sync_reminder_dialog.dart';
@@ -333,6 +334,7 @@ IconData _groupIcon(DashboardGroup group) => switch (group) {
   DashboardGroup.finance => Icons.account_balance_wallet_outlined,
   DashboardGroup.reports => Icons.bar_chart_outlined,
   DashboardGroup.settings => Icons.settings_outlined,
+  DashboardGroup.about => Icons.info_outline,
 };
 
 class _Sidebar extends StatelessWidget {
@@ -482,6 +484,12 @@ class _GroupTabs extends StatelessWidget {
           initialTab: initialSettingsTab,
           repository: databaseSettingsRepositoryFactory?.call(),
         ),
+      );
+    }
+    if (group == DashboardGroup.about) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: AboutTab(),
       );
     }
     if (group == DashboardGroup.reports) {

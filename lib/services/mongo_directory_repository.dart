@@ -1,4 +1,5 @@
 import 'package:mongo_dart/mongo_dart.dart';
+import 'change_history.dart';
 import 'mongo_sync_journal.dart';
 import '../core/config/database_config.dart';
 import '../models/inventory/inventory_models.dart';
@@ -75,6 +76,12 @@ class MongoDirectoryRepository implements DirectoryRepository {
   Future<DirectoryEntry> update(String id, DirectoryEntryDraft draft) async {
     if (draft.name.trim().isEmpty) throw ArgumentError('Vui lòng nhập tên');
     await _connect();
+    final kindLabel = draft.kind == DirectoryKind.partner
+        ? 'partner'
+        : 'carrier';
+    final before = await _db.collection(_collection(draft.kind)).findOne({
+      '_id': id,
+    });
     final row = await _db
         .collection(_collection(draft.kind))
         .findAndModify(
@@ -101,12 +108,33 @@ class MongoDirectoryRepository implements DirectoryRepository {
     if (row == null) {
       throw StateError('Thông tin đã bị xóa hoặc không còn tồn tại.');
     }
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'directory',
+      action: 'edit',
+      kind: kindLabel,
+      parentId: id,
+      summary: ChangeHistory.summary(
+        'edit',
+        kindLabel,
+        id,
+        detail: draft.name.trim(),
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: ChangeHistory.snapshot(row),
+    );
     return _entry(row, draft.kind);
   }
 
   @override
   Future<void> delete(DirectoryEntry entry) async {
     await _connect();
+    final kindLabel = entry.kind == DirectoryKind.partner
+        ? 'partner'
+        : 'carrier';
+    final before = await _db.collection(_collection(entry.kind)).findOne({
+      '_id': entry.id,
+    });
     final r = await _db
         .collection(_collection(entry.kind))
         .updateOne(
@@ -121,6 +149,21 @@ class MongoDirectoryRepository implements DirectoryRepository {
     if (!r.isSuccess || r.hasWriteErrors || r.nMatched != 1) {
       throw StateError('Không xóa được danh bạ. Vui lòng tải lại.');
     }
+    await ChangeHistory.recordDirect(
+      _db,
+      source: 'directory',
+      action: 'delete',
+      kind: kindLabel,
+      parentId: entry.id,
+      summary: ChangeHistory.summary(
+        'delete',
+        kindLabel,
+        entry.id,
+        detail: entry.name,
+      ),
+      before: ChangeHistory.snapshot(before),
+      after: {...ChangeHistory.snapshot(before) ?? const {}, 'DaXoa': true},
+    );
   }
 
   @override

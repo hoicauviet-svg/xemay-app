@@ -205,7 +205,12 @@ Future<void> main() async {
     );
     final deletion = token();
     await reject(
-      () => faulty.delete(RecordKind.order, 1, requestId: deletion),
+      () => faulty.delete(
+        RecordKind.order,
+        1,
+        requestId: deletion,
+        reason: 'Khách đổi ý',
+      ),
       'Deletion interruption simulated',
     );
     final beforeRead = (await get('TonKhoPhuTung', 'stock'))['SoLuongTon'];
@@ -231,17 +236,39 @@ Future<void> main() async {
       'Report refuses partial financial results while a change is pending',
     );
     await service.recover(RecordKind.order, 1);
-    await service.delete(RecordKind.order, 1, requestId: deletion);
+    await service.delete(
+      RecordKind.order,
+      1,
+      requestId: deletion,
+      reason: 'Khách đổi ý',
+    );
+    final cancelledHeader = await get('HoaDonBan', 'order');
     check(
-      await db.collection('HoaDonBan').count() == 0 &&
+      cancelledHeader['TrangThaiDon'] == 'da_huy' &&
+          cancelledHeader['LyDoHuy'] == 'Khách đổi ý' &&
+          await db.collection('ChiTietHoaDonBan').count() == 2 &&
           await db.collection('SoNo').count() == 0 &&
           await db.collection('TraNo').count() == 0,
-      'Sale deletion cascades child records',
+      'Hủy đơn giữ đơn/chi tiết, xóa sổ nợ và lịch sử thanh toán',
+    );
+    check(
+      await db.collection('KhachHang').count() == 1,
+      'Hủy đơn giữ nguyên khách hàng',
+    );
+    final cancelHistory = await db.collection('_change_history').findOne({
+      'Action': 'cancel',
+      'Kind': 'order',
+      'ParentId': 1,
+    });
+    check(
+      cancelHistory != null &&
+          '${cancelHistory['Summary']}'.contains('Hủy đơn hàng'),
+      'Lịch sử ghi hành động hủy đơn hàng',
     );
     check(
       (await get('Xe', 'vehicle'))['TinhTrang'] == true &&
           (await get('TonKhoPhuTung', 'stock'))['SoLuongTon'] == 11,
-      'Recovered deletion restores stock exactly once',
+      'Recovered cancellation restores stock exactly once',
     );
     await put('NhapHang', {
       '_id': 'batch',

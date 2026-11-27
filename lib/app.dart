@@ -14,10 +14,12 @@ import 'models/repositories/sales_repository.dart';
 import 'models/repositories/batch_repository.dart';
 import 'models/repositories/directory_repository.dart';
 import 'views/dashboard/dashboard_screen.dart';
+import 'views/splash/splash_screen.dart';
 
 class StoreApp extends StatelessWidget {
   const StoreApp({
     super.key,
+    this.showSplash = false,
     this.inventoryRepositoryFactory,
     this.customerRepositoryFactory,
     this.partnerRepositoryFactory,
@@ -31,6 +33,7 @@ class StoreApp extends StatelessWidget {
     this.databaseSettingsRepositoryFactory,
     this.salesRepositoryFactory,
   });
+  final bool showSplash;
   final InventoryRepository Function()? inventoryRepositoryFactory;
   final CustomerRepository Function()? customerRepositoryFactory;
   final PartnerRepository Function()? partnerRepositoryFactory;
@@ -46,14 +49,8 @@ class StoreApp extends StatelessWidget {
   final SalesRepository Function()? salesRepositoryFactory;
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Xe Máy Toàn Hợp',
-    debugShowCheckedModeBanner: false,
-    locale: const Locale('vi'),
-    supportedLocales: const [Locale('vi')],
-    localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: AppTheme.light,
-    home: DashboardScreen(
+  Widget build(BuildContext context) {
+    final dashboard = DashboardScreen(
       inventoryRepositoryFactory: inventoryRepositoryFactory,
       customerRepositoryFactory: customerRepositoryFactory,
       partnerRepositoryFactory: partnerRepositoryFactory,
@@ -66,6 +63,15 @@ class StoreApp extends StatelessWidget {
       reportsRepositoryFactory: reportsRepositoryFactory,
       databaseSettingsRepositoryFactory: databaseSettingsRepositoryFactory,
       salesRepositoryFactory: salesRepositoryFactory,
-    ),
-  );
+    );
+    return MaterialApp(
+      title: 'Xe Máy Toàn Hợp',
+      debugShowCheckedModeBanner: false,
+      locale: const Locale('vi'),
+      supportedLocales: const [Locale('vi')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      theme: AppTheme.light,
+      home: showSplash ? SplashGate(child: dashboard) : dashboard,
+    );
+  }
 }
